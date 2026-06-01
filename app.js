@@ -1204,9 +1204,13 @@
             'És o assistente de compras do BoraAli, uma app cooperativa de listas de compras para férias. ' +
             'Respondes em português de Portugal (PT-PT). Sê conciso, prático e bem-disposto. ' +
             'Não uses markdown. Usa frases curtas e directas. ' +
-            'Tens ferramentas para adicionar artigos à lista e consultar o estado actual. ' +
-            'Quando o utilizador pedir sugestões, adiciona os artigos directamente com a ferramenta. ' +
-            'Depois de adicionar, confirma o que fizeste de forma breve e divertida. ' +
+            'Tens três ferramentas: ' +
+            '1) addItemToList — adiciona novos artigos à lista; ' +
+            '2) updateItemCategories — actualiza a categoria de artigos existentes (usa os IDs do contexto); ' +
+            '3) getListSummary — consulta o estado actual da lista com os IDs dos itens. ' +
+            'Quando o utilizador pedir para categorizar, usa PRIMEIRO getListSummary para ver os IDs e depois updateItemCategories para actualizar. ' +
+            'Quando o utilizador pedir sugestões, adiciona os artigos directamente com addItemToList. ' +
+            'Após cada acção, confirma o que fizeste de forma breve e divertida. ' +
             'Data de hoje: ' + new Date().toLocaleDateString('pt-PT');
 
         var fullPrompt = 'Contexto da lista:\n' + context + '\n\nPedido: ' + userPrompt;
@@ -1245,12 +1249,15 @@
                     var result = executeAiTool(p.functionCall.name, p.functionCall.args || {});
                     return { functionResponse: { name: p.functionCall.name, response: result } };
                 });
-                conversationContents.push({ role: 'function', parts: toolResults });
+                conversationContents.push({ role: 'user', parts: toolResults });
                 return geminiRequest(conversationContents).then(processResponse);
             }
 
             var text = parts.filter(function (p) { return p.text; }).map(function (p) { return p.text; }).join('\n').trim();
-            if (!text) throw new Error('Resposta vazia');
+            if (!text) {
+                // AI só fez tool calls sem texto final — pedir confirmação
+                return 'Feito! ✅';
+            }
             return text;
         }
 
