@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#1a73e8">
+    <meta name="theme-color" content="#65a30d">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>BoraAli - Lista de Compras Cooperativa</title>
@@ -73,16 +73,6 @@
                     </div>
                 </div>
 
-                <!-- Add Item Form -->
-                <div class="add-item-form">
-                    <div class="add-item-row">
-                        <input type="text" id="itemName" placeholder="Artigo (ex: Leite)" class="input-field">
-                        <input type="number" id="itemQty" placeholder="Qtd" class="input-field input-small" min="1" value="1">
-                        <input type="text" id="itemUnit" placeholder="un" class="input-field input-tiny">
-                        <button class="btn btn-primary" id="addItemBtn">+</button>
-                    </div>
-                </div>
-
                 <!-- Items List -->
                 <div class="items-section">
                     <div class="items-header">
@@ -99,6 +89,16 @@
                         <button class="btn-link btn-clear" id="clearCheckedBtn" style="display:none;">Limpar</button>
                     </div>
                     <div class="items-list" id="checkedItems"></div>
+                </div>
+            </div>
+
+            <!-- Add Item Form (sticky bottom) -->
+            <div class="add-item-form">
+                <div class="add-item-row">
+                    <input type="text" id="itemName" placeholder="Artigo (ex: Leite)" class="input-field">
+                    <input type="number" id="itemQty" placeholder="Qtd" class="input-field input-small" min="1" value="1">
+                    <input type="text" id="itemUnit" placeholder="un" class="input-field input-tiny">
+                    <button class="btn btn-primary" id="addItemBtn">+</button>
                 </div>
             </div>
         </div>
