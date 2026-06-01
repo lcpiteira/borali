@@ -2,15 +2,14 @@
     'use strict';
 
     // === Firebase Config ===
-    // TODO: Substitui com a configuração do teu projeto Firebase "BoraAli"
     const FIREBASE_CONFIG = {
-        apiKey: "COLOCA_AQUI_A_TUA_API_KEY",
-        authDomain: "COLOCA_AQUI.firebaseapp.com",
-        databaseURL: "https://COLOCA_AQUI-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId: "COLOCA_AQUI",
-        storageBucket: "COLOCA_AQUI.firebasestorage.app",
-        messagingSenderId: "COLOCA_AQUI",
-        appId: "COLOCA_AQUI"
+        apiKey: "AIzaSyB7vpMV8uhGA6qde51wq4qr4biivi2QWJI",
+        authDomain: "boraali-87a41.firebaseapp.com",
+        databaseURL: "https://boraali-87a41-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "boraali-87a41",
+        storageBucket: "boraali-87a41.firebasestorage.app",
+        messagingSenderId: "341111325815",
+        appId: "1:341111325815:web:82bc34398134d13030b272"
     };
 
     // === State ===
