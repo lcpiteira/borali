@@ -466,6 +466,7 @@ body {
     white-space: nowrap;
 }
 
+.item-edit,
 .item-delete {
     background: none;
     border: none;
@@ -476,8 +477,26 @@ body {
     padding: 4px;
 }
 
+.item-edit:hover,
 .item-delete:hover {
     opacity: 1;
+}
+
+.edit-label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.edit-qty-row {
+    display: flex;
+    gap: 12px;
+}
+
+.edit-qty-col {
+    flex: 1;
+    min-width: 0;
 }
 
 /* Checked section */
