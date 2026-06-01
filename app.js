@@ -183,7 +183,7 @@
     // === Groups Screen ===
     function showGroups() {
         showScreen('groups');
-        userNameGroupsEl.textContent = currentUser.displayName || currentUser.email;
+        userNameGroupsEl.textContent = shortName(currentUser.displayName) || currentUser.email;
         loadUserGroups();
 
         // Auto-fill code from URL param (e.g. ?code=ABC123)
@@ -402,7 +402,7 @@
         card.className = 'item-card' + (isChecked ? ' checked' : '');
 
         var qtyText = item.quantity ? item.quantity + (item.unit ? ' ' + item.unit : '') : '';
-        var addedByText = item.addedByName || 'Alguém';
+        var addedByText = shortName(item.addedByName) || 'Alguém';
         var timeText = item.addedAt ? timeAgo(item.addedAt) : '';
 
         card.innerHTML =
@@ -571,7 +571,7 @@
                             ? '<img class="member-avatar" src="' + escapeHtml(m.photoURL) + '" alt="">'
                             : '<div class="member-avatar-placeholder">' + (m.name ? m.name.charAt(0).toUpperCase() : '?') + '</div>') +
                         '<div class="member-info">' +
-                        '<div class="member-name">' + escapeHtml(m.name || 'Utilizador') + '</div>' +
+                        '<div class="member-name">' + escapeHtml(shortName(m.name) || 'Utilizador') + '</div>' +
                         '<div class="member-role">' + (isOwner ? '👑 Administrador' : 'Membro') + '</div>' +
                         '</div>';
                     membersListEl.appendChild(div);
@@ -686,6 +686,14 @@
         var div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    function shortName(name) {
+        if (!name) return '';
+        var parts = name.trim().split(/\s+/);
+        if (parts.length === 1) return parts[0];
+        var last = parts[parts.length - 1];
+        return parts[0] + ' ' + last.charAt(0).toUpperCase() + '.';
     }
 
     function timeAgo(timestamp) {
