@@ -1,0 +1,7 @@
+# Phoenix Engine
+.agents/
+.claude/
+.cursor/
+.github/
+_phoenix/
+_phoenix-output/
