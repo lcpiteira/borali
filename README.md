@@ -33,7 +33,12 @@ Lista de compras cooperativa para férias — organiza as compras em grupo!
     "groups": {
       "$groupId": {
         ".read": "data.child('members').child(auth.uid).exists()",
-        ".write": "data.child('members').child(auth.uid).exists() || !data.exists()"
+        ".write": "data.child('members').child(auth.uid).exists() || !data.exists()",
+        "members": {
+          "$uid": {
+            ".write": "$uid === auth.uid"
+          }
+        }
       }
     },
     "codes": {

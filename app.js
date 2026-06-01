@@ -161,6 +161,14 @@
         showScreen('groups');
         userNameGroupsEl.textContent = currentUser.displayName || currentUser.email;
         loadUserGroups();
+
+        // Auto-fill code from URL param (e.g. ?code=ABC123)
+        var params = new URLSearchParams(window.location.search);
+        var codeParam = params.get('code');
+        if (codeParam) {
+            joinCodeEl.value = codeParam.toUpperCase();
+            window.history.replaceState({}, '', window.location.pathname);
+        }
     }
 
     function loadUserGroups() {
@@ -506,11 +514,12 @@
     function handleShareCode() {
         var code = groupCodeEl.textContent;
         var groupName = modalGroupNameEl.textContent;
+        var link = 'https://lcpiteira.github.io/borali/?code=' + code;
         var messages = [
-            '🛒 Bora às compras! Junta-te ao grupo "' + groupName + '" no BoraAli!\n\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nSe não trouxeres o que está na lista, dormes no carro. 🚗',
-            '🏖️ Férias a chegar e a lista de compras não se faz sozinha!\n\nEntra no grupo "' + groupName + '" no BoraAli:\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nQuem não adicionar nada, fica a comer tostas com ar. 🍞💨',
-            '📢 ALERTA DE COMPRAS!\n\nO grupo "' + groupName + '" precisa de ti no BoraAli!\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nNão sejas o amigo que aparece só com gelo e guardanapos. 🧊',
-            '🛒 Atenção equipa!\n\nA lista de compras para "' + groupName + '" está a precisar do teu talento.\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nRegra: quem não mete na lista, não come. Simples. 😤🍽️'
+            '🛒 Bora às compras! Junta-te ao grupo "' + groupName + '" no BoraAli!\n\n👉 ' + link + '\n\nSe não trouxeres o que está na lista, dormes no carro. 🚗',
+            '🏖️ Férias a chegar e a lista de compras não se faz sozinha!\n\nEntra no grupo "' + groupName + '":\n👉 ' + link + '\n\nQuem não adicionar nada, fica a comer tostas com ar. 🍞💨',
+            '📢 ALERTA DE COMPRAS!\n\nO grupo "' + groupName + '" precisa de ti!\n👉 ' + link + '\n\nNão sejas o amigo que aparece só com gelo e guardanapos. 🧊',
+            '🛒 Atenção equipa!\n\nA lista de compras para "' + groupName + '" está a precisar do teu talento:\n👉 ' + link + '\n\nRegra: quem não mete na lista, não come. Simples. 😤🍽️'
         ];
         var msg = messages[Math.floor(Math.random() * messages.length)];
 

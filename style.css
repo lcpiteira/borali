@@ -547,6 +547,10 @@ body {
     font-weight: 700;
     letter-spacing: 4px;
     font-family: monospace;
+    color: var(--primary);
+    text-decoration: underline;
+    cursor: pointer;
+    user-select: all;
 }
 
 .info-note {
