@@ -206,6 +206,13 @@ body {
     color: var(--danger);
 }
 
+.btn-share {
+    width: 100%;
+    margin-top: 10px;
+    background: var(--success);
+    color: #fff;
+}
+
 /* Headers */
 .screen-header {
     display: flex;

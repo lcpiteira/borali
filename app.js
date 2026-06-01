@@ -50,6 +50,7 @@
     const modalGroupNameEl = document.getElementById('modalGroupName');
     const groupCodeEl = document.getElementById('groupCode');
     const copyCodeBtn = document.getElementById('copyCodeBtn');
+    const shareCodeBtn = document.getElementById('shareCodeBtn');
     const membersListEl = document.getElementById('membersList');
     const masterSectionEl = document.getElementById('masterSection');
     const leaveSectionEl = document.getElementById('leaveSection');
@@ -108,6 +109,7 @@
             if (e.target === groupInfoModal) hideGroupInfo();
         });
         copyCodeBtn.addEventListener('click', handleCopyCode);
+        shareCodeBtn.addEventListener('click', handleShareCode);
         deleteGroupBtn.addEventListener('click', handleDeleteGroup);
         leaveGroupBtn.addEventListener('click', handleLeaveGroup);
         clearCheckedBtn.addEventListener('click', handleClearChecked);
@@ -497,19 +499,42 @@
 
     function handleCopyCode() {
         var code = groupCodeEl.textContent;
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(code).then(function () {
-                showToast('Código copiado: ' + code);
+        copyToClipboard(code);
+        showToast('Código copiado: ' + code);
+    }
+
+    function handleShareCode() {
+        var code = groupCodeEl.textContent;
+        var groupName = modalGroupNameEl.textContent;
+        var messages = [
+            '🛒 Bora às compras! Junta-te ao grupo "' + groupName + '" no BoraAli!\n\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nSe não trouxeres o que está na lista, dormes no carro. 🚗',
+            '🏖️ Férias a chegar e a lista de compras não se faz sozinha!\n\nEntra no grupo "' + groupName + '" no BoraAli:\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nQuem não adicionar nada, fica a comer tostas com ar. 🍞💨',
+            '📢 ALERTA DE COMPRAS!\n\nO grupo "' + groupName + '" precisa de ti no BoraAli!\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nNão sejas o amigo que aparece só com gelo e guardanapos. 🧊',
+            '🛒 Atenção equipa!\n\nA lista de compras para "' + groupName + '" está a precisar do teu talento.\nCódigo: ' + code + '\n\n👉 https://lcpiteira.github.io/borali/\n\nRegra: quem não mete na lista, não come. Simples. 😤🍽️'
+        ];
+        var msg = messages[Math.floor(Math.random() * messages.length)];
+
+        if (navigator.share) {
+            navigator.share({ text: msg }).catch(function () {
+                copyToClipboard(msg);
+                showToast('Mensagem copiada! Cola e envia 📤');
             });
         } else {
-            // Fallback
+            copyToClipboard(msg);
+            showToast('Mensagem copiada! Cola e envia 📤');
+        }
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text);
+        } else {
             var ta = document.createElement('textarea');
-            ta.value = code;
+            ta.value = text;
             document.body.appendChild(ta);
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            showToast('Código copiado: ' + code);
         }
     }
 
