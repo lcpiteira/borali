@@ -12,12 +12,32 @@
         appId: "1:341111325815:web:82bc34398134d13030b272"
     };
 
+    // === Categories ===
+    const CATEGORIES = [
+        { key: 'frutas',     label: 'Frutas e Vegetais', emoji: '🥦' },
+        { key: 'lacticinios', label: 'Lacticínios',       emoji: '🥛' },
+        { key: 'padaria',    label: 'Padaria',           emoji: '🍞' },
+        { key: 'carne',      label: 'Carne e Peixe',     emoji: '🥩' },
+        { key: 'mercearia',  label: 'Mercearia',         emoji: '🥫' },
+        { key: 'bebidas',    label: 'Bebidas',           emoji: '🥤' },
+        { key: 'higiene',    label: 'Higiene',           emoji: '🧴' },
+        { key: 'limpeza',    label: 'Limpeza',           emoji: '🧼' },
+        { key: 'congelados', label: 'Congelados',        emoji: '🥶' },
+        { key: 'outros',     label: 'Outros',            emoji: '📦' }
+    ];
+    const CATEGORY_BY_KEY = CATEGORIES.reduce(function (acc, c) { acc[c.key] = c; return acc; }, {});
+    function getCategory(key) { return CATEGORY_BY_KEY[key] || CATEGORY_BY_KEY.outros; }
+
     // === State ===
     let db = null;
     let auth = null;
     let currentUser = null;
     let currentGroupId = null;
     let userGroups = {};
+    let currentRun = null;
+    let currentItems = {};
+    let currentMembers = {};
+    let viewMode = 'mine'; // 'all' | 'mine' (only when run is active)
     let listeners = [];
 
     // === DOM Elements ===
@@ -39,12 +59,21 @@
     const itemNameEl = document.getElementById('itemName');
     const itemQtyEl = document.getElementById('itemQty');
     const itemUnitEl = document.getElementById('itemUnit');
+    const itemCategoryEl = document.getElementById('itemCategory');
     const addItemBtn = document.getElementById('addItemBtn');
     const pendingItemsEl = document.getElementById('pendingItems');
     const checkedItemsEl = document.getElementById('checkedItems');
     const pendingCountEl = document.getElementById('pendingCount');
     const checkedCountEl = document.getElementById('checkedCount');
     const clearCheckedBtn = document.getElementById('clearCheckedBtn');
+    const runBarEl = document.getElementById('runBar');
+    const distributeModal = document.getElementById('distributeModal');
+    const closeDistributeModalBtn = document.getElementById('closeDistributeModal');
+    const shoppersListEl = document.getElementById('shoppersList');
+    const assignmentsListEl = document.getElementById('assignmentsList');
+    const startRunBtn = document.getElementById('startRunBtn');
+    let distributeShoppers = []; // uids selected in distribute modal
+    let distributeAssignments = {}; // cat -> uid
     const groupInfoModal = document.getElementById('groupInfoModal');
     const closeModalBtn = document.getElementById('closeModal');
     const editItemModal = document.getElementById('editItemModal');
@@ -52,6 +81,7 @@
     const editItemNameEl = document.getElementById('editItemName');
     const editItemQtyEl = document.getElementById('editItemQty');
     const editItemUnitEl = document.getElementById('editItemUnit');
+    const editItemCategoryEl = document.getElementById('editItemCategory');
     const saveEditBtn = document.getElementById('saveEditBtn');
     let editingItemId = null;
     const modalGroupNameEl = document.getElementById('modalGroupName');
@@ -66,8 +96,18 @@
     const toastEl = document.getElementById('toast');
 
     // === Init ===
+    populateCategorySelects();
     initFirebase();
     bindEvents();
+
+    function populateCategorySelects() {
+        var html = CATEGORIES.map(function (c) {
+            return '<option value="' + c.key + '">' + c.emoji + ' ' + c.label + '</option>';
+        }).join('');
+        itemCategoryEl.innerHTML = html;
+        itemCategoryEl.value = 'outros';
+        editItemCategoryEl.innerHTML = html;
+    }
 
     function initFirebase() {
         firebase.initializeApp(FIREBASE_CONFIG);
@@ -136,7 +176,14 @@
         });
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && editItemModal.style.display !== 'none') closeEditModal();
+            if (e.key === 'Escape' && distributeModal.style.display !== 'none') closeDistributeModal();
         });
+        closeDistributeModalBtn.addEventListener('click', closeDistributeModal);
+        distributeModal.addEventListener('click', function (e) {
+            if (e.target === distributeModal) closeDistributeModal();
+        });
+        startRunBtn.addEventListener('click', handleStartRun);
+        runBarEl.addEventListener('click', handleRunBarClick);
     }
 
     // === Auth ===
@@ -340,17 +387,38 @@
     // === Shopping List Screen ===
     function openGroup(gid, groupData) {
         currentGroupId = gid;
+        currentItems = {};
+        currentRun = null;
+        currentMembers = {};
+        viewMode = 'mine';
         groupTitleEl.textContent = groupData.name;
         showScreen('list');
-        attachItemsListener(gid);
+        attachGroupListeners(gid);
     }
 
-    function attachItemsListener(gid) {
+    function attachGroupListeners(gid) {
         detachListeners();
-        var ref = db.ref('groups/' + gid + '/items');
-        var listener = ref.on('value', function (snap) {
-            renderItems(snap.val() || {});
+        attachListener(db.ref('groups/' + gid + '/items'), function (snap) {
+            currentItems = snap.val() || {};
+            render();
+            maybeAutoEndRun();
         });
+        attachListener(db.ref('groups/' + gid + '/shoppingRun'), function (snap) {
+            var prevRun = currentRun;
+            currentRun = snap.val() || null;
+            if (!prevRun && currentRun) viewMode = userIsShopper() ? 'mine' : 'all';
+            if (prevRun && !currentRun) viewMode = 'mine';
+            render();
+            maybeAutoEndRun();
+        });
+        attachListener(db.ref('groups/' + gid + '/members'), function (snap) {
+            currentMembers = snap.val() || {};
+            render();
+        });
+    }
+
+    function attachListener(ref, cb) {
+        var listener = ref.on('value', cb);
         listeners.push({ ref: ref, event: 'value', fn: listener });
     }
 
@@ -361,12 +429,32 @@
         listeners = [];
     }
 
-    function renderItems(items) {
+    function getItemAssignee(item) {
+        if (!currentRun || !currentRun.assignments) return null;
+        var catKey = getCategory(item.category).key;
+        return currentRun.assignments[catKey] || null;
+    }
+
+    function getMemberName(uid) {
+        var m = currentMembers[uid];
+        return m ? m.name : 'Alguém';
+    }
+
+    function userIsShopper() {
+        if (!currentRun || !currentRun.assignments) return false;
+        var keys = Object.keys(currentRun.assignments);
+        for (var i = 0; i < keys.length; i++) {
+            if (currentRun.assignments[keys[i]] === currentUser.uid) return true;
+        }
+        return false;
+    }
+
+    function render() {
         var pending = [];
         var checked = [];
 
-        Object.keys(items).forEach(function (id) {
-            var item = items[id];
+        Object.keys(currentItems).forEach(function (id) {
+            var item = currentItems[id];
             item._id = id;
             if (item.checked) {
                 checked.push(item);
@@ -379,15 +467,23 @@
         pending.sort(function (a, b) { return (b.addedAt || 0) - (a.addedAt || 0); });
         checked.sort(function (a, b) { return (b.checkedAt || 0) - (a.checkedAt || 0); });
 
-        pendingCountEl.textContent = pending.length;
+        renderRunBar(pending);
+
+        // Apply view filter when run is active and viewMode === 'mine'
+        var pendingFiltered = pending;
+        if (currentRun && viewMode === 'mine') {
+            pendingFiltered = pending.filter(function (it) { return getItemAssignee(it) === currentUser.uid; });
+        }
+
+        pendingCountEl.textContent = pendingFiltered.length;
         checkedCountEl.textContent = checked.length;
         clearCheckedBtn.style.display = checked.length > 0 ? '' : 'none';
 
-        pendingItemsEl.innerHTML = pending.length === 0
-            ? '<div class="empty-state"><div class="emoji">✨</div><p>Lista vazia! Adiciona artigos acima.</p></div>'
+        pendingItemsEl.innerHTML = pendingFiltered.length === 0
+            ? '<div class="empty-state"><div class="emoji">✨</div><p>' + (currentRun && viewMode === 'mine' ? 'Nada para ti aqui — boa!' : 'Lista vazia! Adiciona artigos abaixo.') + '</p></div>'
             : '';
 
-        pending.forEach(function (item) {
+        pendingFiltered.forEach(function (item) {
             pendingItemsEl.appendChild(createItemCard(item, false));
         });
 
@@ -399,18 +495,26 @@
 
     function createItemCard(item, isChecked) {
         var card = document.createElement('div');
-        card.className = 'item-card' + (isChecked ? ' checked' : '');
+        var cat = getCategory(item.category);
+        var assigneeUid = getItemAssignee(item);
+        var isMine = currentRun && assigneeUid === currentUser.uid;
+        var isOthers = currentRun && assigneeUid && !isMine;
+
+        card.className = 'item-card' + (isChecked ? ' checked' : '') + (isOthers ? ' not-mine' : '') + (isMine ? ' mine' : '');
 
         var qtyText = item.quantity ? item.quantity + (item.unit ? ' ' + item.unit : '') : '';
         var addedByText = shortName(item.addedByName) || 'Alguém';
         var timeText = item.addedAt ? timeAgo(item.addedAt) : '';
+        var assigneeName = currentRun && assigneeUid ? shortName(getMemberName(assigneeUid)) : '';
+        var metaText = addedByText + (timeText ? ' • ' + timeText : '');
+        if (assigneeName && !isMine) metaText = '👉 ' + assigneeName + ' • ' + metaText;
 
         card.innerHTML =
-            '<div class="item-check ' + (isChecked ? 'is-checked' : '') + '" data-id="' + item._id + '">' +
-            (isChecked ? '✓' : '') + '</div>' +
+            '<div class="item-check ' + (isChecked ? 'is-checked' : '') + '" data-id="' + item._id + '" title="' + cat.label + '">' +
+            (isChecked ? '✓' : '<span class="item-cat-emoji">' + cat.emoji + '</span>') + '</div>' +
             '<div class="item-details">' +
             '<div class="item-name">' + escapeHtml(item.name) + '</div>' +
-            '<div class="item-meta">' + escapeHtml(addedByText) + (timeText ? ' • ' + timeText : '') + '</div>' +
+            '<div class="item-meta">' + escapeHtml(metaText) + '</div>' +
             '</div>' +
             (qtyText ? '<span class="item-qty">' + escapeHtml(qtyText) + '</span>' : '') +
             '<button class="item-edit" data-id="' + item._id + '" title="Editar">✏️</button>' +
@@ -441,11 +545,13 @@
 
         var qty = parseInt(itemQtyEl.value) || 1;
         var unit = itemUnitEl.value.trim() || '';
+        var category = itemCategoryEl.value || 'outros';
 
         var itemData = {
             name: name,
             quantity: qty,
             unit: unit,
+            category: category,
             addedBy: currentUser.uid,
             addedByName: currentUser.displayName || 'Utilizador',
             addedAt: firebase.database.ServerValue.TIMESTAMP,
@@ -458,6 +564,7 @@
             itemNameEl.value = '';
             itemQtyEl.value = '1';
             itemUnitEl.value = '';
+            itemCategoryEl.value = 'outros';
             itemNameEl.focus();
         }).catch(function (err) {
             showToast('Erro: ' + err.message);
@@ -483,6 +590,7 @@
         editItemNameEl.value = item.name || '';
         editItemQtyEl.value = item.quantity || 1;
         editItemUnitEl.value = item.unit || '';
+        editItemCategoryEl.value = getCategory(item.category).key;
         editItemModal.style.display = 'flex';
         setTimeout(function () { editItemNameEl.focus(); editItemNameEl.select(); }, 50);
     }
@@ -517,6 +625,7 @@
                 name: name,
                 quantity: qty,
                 unit: unit,
+                category: editItemCategoryEl.value || 'outros',
                 editedBy: currentUser.uid,
                 editedByName: currentUser.displayName || 'Utilizador',
                 editedAt: firebase.database.ServerValue.TIMESTAMP
@@ -543,6 +652,171 @@
                 showToast('Itens comprados limpos ✨');
             }
         });
+    }
+
+    // === Shopping Run ===
+    function renderRunBar(pendingItems) {
+        if (!currentRun) {
+            if (pendingItems.length === 0) {
+                runBarEl.innerHTML = '';
+                runBarEl.style.display = 'none';
+                return;
+            }
+            runBarEl.style.display = '';
+            runBarEl.innerHTML = '<button class="btn-distribute" data-action="open-distribute">🛒 Distribuir tarefas</button>';
+            return;
+        }
+        // Run active — show tabs + terminar
+        var mineCount = pendingItems.filter(function (it) { return getItemAssignee(it) === currentUser.uid; }).length;
+        var allCount = pendingItems.length;
+        runBarEl.style.display = '';
+        runBarEl.innerHTML =
+            '<div class="run-tabs">' +
+            '<button class="run-tab ' + (viewMode === 'mine' ? 'active' : '') + '" data-action="view-mine">As minhas (' + mineCount + ')</button>' +
+            '<button class="run-tab ' + (viewMode === 'all' ? 'active' : '') + '" data-action="view-all">Todas (' + allCount + ')</button>' +
+            '</div>' +
+            '<button class="btn-end-run" data-action="end-run">Terminar</button>';
+    }
+
+    function handleRunBarClick(e) {
+        var action = e.target.getAttribute('data-action');
+        if (!action) return;
+        if (action === 'open-distribute') openDistributeModal();
+        else if (action === 'view-mine') { viewMode = 'mine'; render(); }
+        else if (action === 'view-all')  { viewMode = 'all';  render(); }
+        else if (action === 'end-run')   handleEndRun();
+    }
+
+    function openDistributeModal() {
+        // Default shoppers: current user only
+        distributeShoppers = [currentUser.uid];
+        distributeAssignments = {};
+        autoDistribute();
+        renderDistributeModal();
+        distributeModal.style.display = 'flex';
+    }
+
+    function closeDistributeModal() {
+        distributeModal.style.display = 'none';
+    }
+
+    function autoDistribute() {
+        // Categories with pending items
+        var pendingItems = Object.keys(currentItems)
+            .map(function (id) { return currentItems[id]; })
+            .filter(function (it) { return !it.checked; });
+        var cats = {};
+        pendingItems.forEach(function (it) {
+            var k = getCategory(it.category).key;
+            cats[k] = true;
+        });
+        var catKeys = Object.keys(cats);
+        distributeAssignments = {};
+        if (distributeShoppers.length === 0 || catKeys.length === 0) return;
+        catKeys.forEach(function (k, i) {
+            distributeAssignments[k] = distributeShoppers[i % distributeShoppers.length];
+        });
+    }
+
+    function renderDistributeModal() {
+        // Shoppers checkboxes (members of the group)
+        var memberHtml = Object.keys(currentMembers).map(function (uid) {
+            var m = currentMembers[uid];
+            var checked = distributeShoppers.indexOf(uid) !== -1;
+            var name = shortName(m.name) || 'Utilizador';
+            return '<label class="shopper-row">' +
+                '<input type="checkbox" data-uid="' + uid + '" ' + (checked ? 'checked' : '') + '>' +
+                '<span>' + escapeHtml(name) + '</span>' +
+                '</label>';
+        }).join('');
+        shoppersListEl.innerHTML = memberHtml || '<p class="info-note">Sem membros no grupo.</p>';
+
+        shoppersListEl.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                var uid = cb.getAttribute('data-uid');
+                if (cb.checked) {
+                    if (distributeShoppers.indexOf(uid) === -1) distributeShoppers.push(uid);
+                } else {
+                    distributeShoppers = distributeShoppers.filter(function (u) { return u !== uid; });
+                }
+                autoDistribute();
+                renderDistributeModal();
+            });
+        });
+
+        // Assignments per category (only categories with pending items)
+        var pendingItems = Object.keys(currentItems)
+            .map(function (id) { return currentItems[id]; })
+            .filter(function (it) { return !it.checked; });
+        var catKeys = {};
+        pendingItems.forEach(function (it) { catKeys[getCategory(it.category).key] = true; });
+
+        if (Object.keys(catKeys).length === 0) {
+            assignmentsListEl.innerHTML = '<p class="info-note">Não há artigos pendentes para distribuir.</p>';
+            startRunBtn.disabled = true;
+            return;
+        }
+        startRunBtn.disabled = distributeShoppers.length === 0;
+
+        var rows = CATEGORIES.filter(function (c) { return catKeys[c.key]; }).map(function (c) {
+            var assigneeUid = distributeAssignments[c.key];
+            var assigneeName = assigneeUid ? (shortName(getMemberName(assigneeUid)) || 'Utilizador') : '— (sem ninguém)';
+            return '<div class="assignment-row">' +
+                '<span class="assignment-cat">' + c.emoji + ' ' + c.label + '</span>' +
+                '<button class="assignment-chip" data-cat="' + c.key + '">' + escapeHtml(assigneeName) + '</button>' +
+                '</div>';
+        }).join('');
+        assignmentsListEl.innerHTML = rows;
+
+        assignmentsListEl.querySelectorAll('.assignment-chip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                if (distributeShoppers.length === 0) return;
+                var cat = btn.getAttribute('data-cat');
+                var current = distributeAssignments[cat];
+                var idx = distributeShoppers.indexOf(current);
+                var next = distributeShoppers[(idx + 1) % distributeShoppers.length];
+                distributeAssignments[cat] = next;
+                renderDistributeModal();
+            });
+        });
+    }
+
+    function handleStartRun() {
+        if (distributeShoppers.length === 0) {
+            showToast('Escolhe pelo menos uma pessoa');
+            return;
+        }
+        if (Object.keys(distributeAssignments).length === 0) {
+            showToast('Sem categorias para distribuir');
+            return;
+        }
+        var run = {
+            startedAt: firebase.database.ServerValue.TIMESTAMP,
+            startedBy: currentUser.uid,
+            startedByName: currentUser.displayName || 'Utilizador',
+            assignments: distributeAssignments
+        };
+        db.ref('groups/' + currentGroupId + '/shoppingRun').set(run).then(function () {
+            closeDistributeModal();
+            showToast('Bora às compras! 🛒');
+        }).catch(function (err) {
+            showToast('Erro: ' + err.message);
+        });
+    }
+
+    function handleEndRun() {
+        db.ref('groups/' + currentGroupId + '/shoppingRun').remove();
+    }
+
+    function maybeAutoEndRun() {
+        if (!currentRun) return;
+        var pendingForRun = Object.keys(currentItems)
+            .map(function (id) { return currentItems[id]; })
+            .filter(function (it) { return !it.checked && getItemAssignee(it); });
+        if (pendingForRun.length === 0) {
+            db.ref('groups/' + currentGroupId + '/shoppingRun').remove();
+            showToast('Compras concluídas! 🎉');
+        }
     }
 
     // === Group Info Modal ===
