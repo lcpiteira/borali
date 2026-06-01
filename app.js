@@ -47,6 +47,13 @@
     const clearCheckedBtn = document.getElementById('clearCheckedBtn');
     const groupInfoModal = document.getElementById('groupInfoModal');
     const closeModalBtn = document.getElementById('closeModal');
+    const editItemModal = document.getElementById('editItemModal');
+    const closeEditModalBtn = document.getElementById('closeEditModal');
+    const editItemNameEl = document.getElementById('editItemName');
+    const editItemQtyEl = document.getElementById('editItemQty');
+    const editItemUnitEl = document.getElementById('editItemUnit');
+    const saveEditBtn = document.getElementById('saveEditBtn');
+    let editingItemId = null;
     const modalGroupNameEl = document.getElementById('modalGroupName');
     const groupCodeEl = document.getElementById('groupCode');
     const copyCodeBtn = document.getElementById('copyCodeBtn');
@@ -113,6 +120,23 @@
         deleteGroupBtn.addEventListener('click', handleDeleteGroup);
         leaveGroupBtn.addEventListener('click', handleLeaveGroup);
         clearCheckedBtn.addEventListener('click', handleClearChecked);
+        closeEditModalBtn.addEventListener('click', closeEditModal);
+        editItemModal.addEventListener('click', function (e) {
+            if (e.target === editItemModal) closeEditModal();
+        });
+        saveEditBtn.addEventListener('click', handleSaveEdit);
+        editItemNameEl.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') handleSaveEdit();
+        });
+        editItemQtyEl.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') handleSaveEdit();
+        });
+        editItemUnitEl.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') handleSaveEdit();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && editItemModal.style.display !== 'none') closeEditModal();
+        });
     }
 
     // === Auth ===
@@ -389,10 +413,15 @@
             '<div class="item-meta">' + escapeHtml(addedByText) + (timeText ? ' • ' + timeText : '') + '</div>' +
             '</div>' +
             (qtyText ? '<span class="item-qty">' + escapeHtml(qtyText) + '</span>' : '') +
-            '<button class="item-delete" data-id="' + item._id + '">🗑️</button>';
+            '<button class="item-edit" data-id="' + item._id + '" title="Editar">✏️</button>' +
+            '<button class="item-delete" data-id="' + item._id + '" title="Apagar">🗑️</button>';
 
         card.querySelector('.item-check').addEventListener('click', function () {
             toggleItemCheck(item._id, !isChecked);
+        });
+
+        card.querySelector('.item-edit').addEventListener('click', function () {
+            openEditModal(item);
         });
 
         card.querySelector('.item-delete').addEventListener('click', function () {
@@ -447,6 +476,56 @@
 
     function deleteItem(itemId) {
         db.ref('groups/' + currentGroupId + '/items/' + itemId).remove();
+    }
+
+    function openEditModal(item) {
+        editingItemId = item._id;
+        editItemNameEl.value = item.name || '';
+        editItemQtyEl.value = item.quantity || 1;
+        editItemUnitEl.value = item.unit || '';
+        editItemModal.style.display = 'flex';
+        setTimeout(function () { editItemNameEl.focus(); editItemNameEl.select(); }, 50);
+    }
+
+    function closeEditModal() {
+        editItemModal.style.display = 'none';
+        editingItemId = null;
+    }
+
+    function handleSaveEdit() {
+        if (!editingItemId || !currentGroupId) return;
+
+        var name = editItemNameEl.value.trim();
+        if (!name) {
+            showToast('Escreve o nome do artigo');
+            editItemNameEl.focus();
+            return;
+        }
+
+        var qty = Math.max(1, parseInt(editItemQtyEl.value) || 1);
+        var unit = editItemUnitEl.value.trim() || '';
+        var itemId = editingItemId;
+        var ref = db.ref('groups/' + currentGroupId + '/items/' + itemId);
+
+        ref.once('value').then(function (snap) {
+            if (!snap.exists()) {
+                showToast('Este artigo já não existe');
+                closeEditModal();
+                return;
+            }
+            return ref.update({
+                name: name,
+                quantity: qty,
+                unit: unit,
+                editedBy: currentUser.uid,
+                editedByName: currentUser.displayName || 'Utilizador',
+                editedAt: firebase.database.ServerValue.TIMESTAMP
+            }).then(function () {
+                closeEditModal();
+            });
+        }).catch(function (err) {
+            showToast('Erro: ' + err.message);
+        });
     }
 
     function handleClearChecked() {
