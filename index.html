@@ -200,6 +200,30 @@
 
         <!-- Toast -->
         <div class="toast" id="toast"></div>
+
+        <!-- AI FAB -->
+        <button class="ai-fab" id="aiFab" style="display:none;" title="Assistente IA">🤖</button>
+
+        <!-- AI Chat Drawer -->
+        <div class="ai-drawer" id="aiDrawer" style="display:none;">
+            <div class="ai-drawer-header">
+                <span>🤖 Assistente de Compras</span>
+                <button class="btn-close" id="aiDrawerClose">✕</button>
+            </div>
+            <div class="ai-messages" id="aiMessages">
+                <div class="ai-bubble bot">Olá! Sou o assistente do BoraAli. Posso sugerir artigos para as férias e adicioná-los directamente à lista. O que precisas? 🛒</div>
+            </div>
+            <div class="ai-quick-btns">
+                <button class="ai-quick-btn" data-prompt="Sugere uma lista de compras completa para umas férias de praia de 1 semana para 4 pessoas e adiciona à lista">🏖️ Férias de praia</button>
+                <button class="ai-quick-btn" data-prompt="Sugere produtos de higiene e limpeza essenciais para férias e adiciona à lista">🧴 Higiene</button>
+                <button class="ai-quick-btn" data-prompt="O que falta na lista que é essencial para férias?">🔍 O que falta?</button>
+                <button class="ai-quick-btn" data-prompt="Sugere snacks e bebidas para a viagem e adiciona à lista">🍿 Snacks</button>
+            </div>
+            <div class="ai-input-row">
+                <input type="text" id="aiInput" placeholder="Pergunta algo..." class="input-field">
+                <button class="btn btn-primary" id="aiSendBtn">↑</button>
+            </div>
+        </div>
     </div>
 
     <!-- Firebase SDK (compat - free tier) -->

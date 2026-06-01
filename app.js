@@ -33,12 +33,15 @@
     let auth = null;
     let currentUser = null;
     let currentGroupId = null;
+    let currentGroupName = null;
     let userGroups = {};
     let currentRun = null;
     let currentItems = {};
     let currentMembers = {};
     let viewMode = 'mine'; // 'all' | 'mine' (only when run is active)
     let listeners = [];
+    const GEMINI_MODEL = 'gemini-2.5-flash';
+    let geminiApiKey = null;
 
     // === DOM Elements ===
     const loadingScreen = document.getElementById('loadingScreen');
@@ -95,6 +98,14 @@
     const leaveGroupBtn = document.getElementById('leaveGroupBtn');
     const toastEl = document.getElementById('toast');
 
+    // === AI DOM ===
+    const aiFabEl = document.getElementById('aiFab');
+    const aiDrawerEl = document.getElementById('aiDrawer');
+    const aiDrawerCloseBtn = document.getElementById('aiDrawerClose');
+    const aiMessagesEl = document.getElementById('aiMessages');
+    const aiInputEl = document.getElementById('aiInput');
+    const aiSendBtn = document.getElementById('aiSendBtn');
+
     // === Init ===
     populateCategorySelects();
     initFirebase();
@@ -113,6 +124,11 @@
         firebase.initializeApp(FIREBASE_CONFIG);
         db = firebase.database();
         auth = firebase.auth();
+
+        // Load Gemini API key
+        db.ref('config/geminiApiKey').once('value', function (snap) {
+            geminiApiKey = snap.val() || null;
+        });
 
         auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
@@ -144,6 +160,9 @@
         backToGroupsBtn.addEventListener('click', function () {
             detachListeners();
             currentGroupId = null;
+            currentGroupName = null;
+            aiFabEl.style.display = 'none';
+            closeAiDrawer();
             showGroups();
         });
         addItemBtn.addEventListener('click', handleAddItem);
@@ -184,6 +203,27 @@
         });
         startRunBtn.addEventListener('click', handleStartRun);
         runBarEl.addEventListener('click', handleRunBarClick);
+
+        // AI events
+        aiFabEl.addEventListener('click', openAiDrawer);
+        aiDrawerCloseBtn.addEventListener('click', closeAiDrawer);
+        aiSendBtn.addEventListener('click', handleAiSend);
+        aiInputEl.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') handleAiSend();
+        });
+        document.addEventListener('click', function (e) {
+            if (aiDrawerEl.style.display !== 'none' &&
+                !aiDrawerEl.contains(e.target) &&
+                e.target !== aiFabEl) {
+                closeAiDrawer();
+            }
+        });
+        document.querySelectorAll('.ai-quick-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var prompt = btn.getAttribute('data-prompt');
+                if (prompt) askGemini(prompt);
+            });
+        });
     }
 
     // === Auth ===
@@ -387,6 +427,7 @@
     // === Shopping List Screen ===
     function openGroup(gid, groupData) {
         currentGroupId = gid;
+        currentGroupName = groupData.name;
         currentItems = {};
         currentRun = null;
         currentMembers = {};
@@ -394,6 +435,7 @@
         groupTitleEl.textContent = groupData.name;
         showScreen('list');
         attachGroupListeners(gid);
+        aiFabEl.style.display = '';
     }
 
     function attachGroupListeners(gid) {
@@ -980,5 +1022,206 @@
         if (hours < 24) return hours + 'h';
         var days = Math.floor(hours / 24);
         return days + 'd';
+    }
+
+    // === AI Chat (Gemini) ===
+    function openAiDrawer() {
+        aiDrawerEl.style.display = 'flex';
+        aiFabEl.style.display = 'none';
+        aiInputEl.focus();
+    }
+
+    function closeAiDrawer() {
+        aiDrawerEl.style.display = 'none';
+        if (currentGroupId) aiFabEl.style.display = '';
+    }
+
+    function handleAiSend() {
+        var text = aiInputEl.value.trim();
+        if (!text) return;
+        aiInputEl.value = '';
+        askGemini(text);
+    }
+
+    function buildShoppingContext() {
+        var lines = [];
+        lines.push('Grupo: ' + (currentGroupName || 'Sem nome'));
+        lines.push('Data: ' + new Date().toLocaleDateString('pt-PT'));
+
+        var pending = [], checked = [];
+        Object.keys(currentItems).forEach(function (id) {
+            var it = currentItems[id];
+            var desc = it.name + (it.quantity ? ' (' + it.quantity + (it.unit ? ' ' + it.unit : '') + ')' : '') +
+                       (it.category ? ' [' + getCategory(it.category).label + ']' : '') +
+                       ' — adicionado por ' + (it.addedByName || 'alguém');
+            if (it.checked) checked.push(desc); else pending.push(desc);
+        });
+
+        lines.push('Por comprar (' + pending.length + '): ' + (pending.length ? pending.join('; ') : 'nenhum'));
+        lines.push('Já comprado (' + checked.length + '): ' + (checked.length ? checked.join('; ') : 'nenhum'));
+
+        var memberNames = Object.values(currentMembers).map(function (m) { return m.name || 'Alguém'; });
+        lines.push('Membros do grupo: ' + (memberNames.length ? memberNames.join(', ') : 'só tu'));
+        return lines.join('\n');
+    }
+
+    var GEMINI_TOOLS = [{
+        functionDeclarations: [
+            {
+                name: 'addItemToList',
+                description: 'Adiciona um ou mais artigos à lista de compras do grupo.',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        items: {
+                            type: 'ARRAY',
+                            description: 'Lista de artigos a adicionar',
+                            items: {
+                                type: 'OBJECT',
+                                properties: {
+                                    name:     { type: 'STRING',  description: 'Nome do artigo' },
+                                    quantity: { type: 'NUMBER',  description: 'Quantidade (número)' },
+                                    unit:     { type: 'STRING',  description: 'Unidade (ex: un, kg, L, pacote)' },
+                                    category: { type: 'STRING',  description: 'Categoria: frutas, lacticinios, padaria, carne, mercearia, bebidas, higiene, limpeza, congelados, outros' }
+                                },
+                                required: ['name']
+                            }
+                        }
+                    },
+                    required: ['items']
+                }
+            },
+            {
+                name: 'getListSummary',
+                description: 'Obtém um resumo actualizado da lista de compras.',
+                parameters: { type: 'OBJECT', properties: {} }
+            }
+        ]
+    }];
+
+    function executeAiTool(name, args) {
+        if (name === 'addItemToList') {
+            var items = args.items || [];
+            var added = [];
+            items.forEach(function (it) {
+                if (!it.name) return;
+                var itemData = {
+                    name: it.name,
+                    quantity: it.quantity || 1,
+                    unit: it.unit || '',
+                    category: it.category || 'outros',
+                    addedBy: currentUser.uid,
+                    addedByName: currentUser.displayName || 'IA',
+                    addedAt: firebase.database.ServerValue.TIMESTAMP,
+                    checked: false,
+                    checkedBy: null,
+                    checkedAt: null
+                };
+                db.ref('groups/' + currentGroupId + '/items').push(itemData);
+                added.push(it.name);
+            });
+            return { success: true, added: added, count: added.length };
+        }
+        if (name === 'getListSummary') {
+            return { summary: buildShoppingContext() };
+        }
+        return { error: 'Ferramenta desconhecida: ' + name };
+    }
+
+    function addAiMessage(text, type) {
+        // Remove loading bubble if present
+        var loading = aiMessagesEl.querySelector('.loading');
+        if (loading) loading.remove();
+
+        var bubble = document.createElement('div');
+        bubble.className = 'ai-bubble ' + type;
+        bubble.textContent = text;
+        aiMessagesEl.appendChild(bubble);
+        aiMessagesEl.scrollTop = aiMessagesEl.scrollHeight;
+        return bubble;
+    }
+
+    function addLoadingBubble() {
+        var bubble = document.createElement('div');
+        bubble.className = 'ai-bubble bot loading';
+        aiMessagesEl.appendChild(bubble);
+        aiMessagesEl.scrollTop = aiMessagesEl.scrollHeight;
+    }
+
+    function askGemini(userPrompt) {
+        if (!geminiApiKey) {
+            addAiMessage('⚠️ API key do Gemini não configurada. Vai ao Firebase Console → Realtime Database e adiciona o nó: config/geminiApiKey com a tua chave do Google AI Studio.', 'error');
+            return;
+        }
+
+        addAiMessage(userPrompt, 'user');
+        addLoadingBubble();
+        aiSendBtn.disabled = true;
+        aiInputEl.disabled = true;
+
+        var context = buildShoppingContext();
+        var systemPrompt =
+            'És o assistente de compras do BoraAli, uma app cooperativa de listas de compras para férias. ' +
+            'Respondes em português de Portugal (PT-PT). Sê conciso, prático e bem-disposto. ' +
+            'Não uses markdown. Usa frases curtas e directas. ' +
+            'Tens ferramentas para adicionar artigos à lista e consultar o estado actual. ' +
+            'Quando o utilizador pedir sugestões, adiciona os artigos directamente com a ferramenta. ' +
+            'Depois de adicionar, confirma o que fizeste de forma breve e divertida. ' +
+            'Data de hoje: ' + new Date().toLocaleDateString('pt-PT');
+
+        var fullPrompt = 'Contexto da lista:\n' + context + '\n\nPedido: ' + userPrompt;
+        var conversationContents = [{ role: 'user', parts: [{ text: fullPrompt }] }];
+        var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + geminiApiKey;
+
+        function geminiRequest(contents) {
+            return fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    system_instruction: { parts: [{ text: systemPrompt }] },
+                    contents: contents,
+                    tools: GEMINI_TOOLS,
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
+                })
+            }).then(function (res) {
+                return res.json().then(function (data) {
+                    if (!res.ok) throw new Error(data.error && data.error.message ? data.error.message : 'Erro ' + res.status);
+                    return data;
+                });
+            });
+        }
+
+        function processResponse(data) {
+            var candidate = data.candidates && data.candidates[0];
+            if (!candidate || !candidate.content || !candidate.content.parts) {
+                throw new Error('Resposta vazia do Gemini');
+            }
+            var parts = candidate.content.parts;
+            var functionCalls = parts.filter(function (p) { return p.functionCall; });
+            conversationContents.push({ role: 'model', parts: parts });
+
+            if (functionCalls.length > 0) {
+                var toolResults = functionCalls.map(function (p) {
+                    var result = executeAiTool(p.functionCall.name, p.functionCall.args || {});
+                    return { functionResponse: { name: p.functionCall.name, response: result } };
+                });
+                conversationContents.push({ role: 'function', parts: toolResults });
+                return geminiRequest(conversationContents).then(processResponse);
+            }
+
+            var text = parts.filter(function (p) { return p.text; }).map(function (p) { return p.text; }).join('\n').trim();
+            if (!text) throw new Error('Resposta vazia');
+            return text;
+        }
+
+        geminiRequest(conversationContents)
+            .then(processResponse)
+            .then(function (text) { addAiMessage(text, 'bot'); })
+            .catch(function (err) { addAiMessage('Erro: ' + err.message, 'error'); })
+            .finally(function () {
+                aiSendBtn.disabled = false;
+                aiInputEl.disabled = false;
+                aiInputEl.focus();
+            });
     }
 })();
