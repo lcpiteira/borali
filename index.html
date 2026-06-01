@@ -73,6 +73,9 @@
                     </div>
                 </div>
 
+                <!-- Run Bar (sticky beneath header) -->
+                <div class="run-bar" id="runBar"></div>
+
                 <!-- Items List -->
                 <div class="items-section">
                     <div class="items-header">
@@ -96,6 +99,9 @@
             <div class="add-item-form">
                 <div class="add-item-row">
                     <input type="text" id="itemName" placeholder="Artigo (ex: Leite)" class="input-field">
+                </div>
+                <div class="add-item-row add-item-row-secondary">
+                    <select id="itemCategory" class="input-field input-select"></select>
                     <input type="number" id="itemQty" placeholder="Qtd" class="input-field input-small" min="1" value="1">
                     <input type="text" id="itemUnit" placeholder="un" class="input-field input-tiny">
                     <button class="btn btn-primary" id="addItemBtn">+</button>
@@ -135,6 +141,30 @@
             </div>
         </div>
 
+        <!-- Distribute Tasks Modal -->
+        <div class="modal-overlay" id="distributeModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>🛒 Distribuir tarefas</h2>
+                    <button class="btn-close" id="closeDistributeModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-section">
+                        <h3>Quem vai às compras?</h3>
+                        <div class="shoppers-list" id="shoppersList"></div>
+                    </div>
+                    <div class="info-section">
+                        <h3>Atribuição por categoria</h3>
+                        <div class="assignments-list" id="assignmentsList"></div>
+                        <p class="info-note">Toca num chip para mudar de pessoa.</p>
+                    </div>
+                    <div class="info-section">
+                        <button class="btn btn-primary" id="startRunBtn">Começar compras</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Edit Item Modal -->
         <div class="modal-overlay" id="editItemModal" style="display: none;">
             <div class="modal">
@@ -146,6 +176,10 @@
                     <div class="info-section">
                         <label class="edit-label" for="editItemName">Nome</label>
                         <input type="text" id="editItemName" class="input-field" placeholder="Artigo">
+                    </div>
+                    <div class="info-section">
+                        <label class="edit-label" for="editItemCategory">Categoria</label>
+                        <select id="editItemCategory" class="input-field"></select>
                     </div>
                     <div class="info-section edit-qty-row">
                         <div class="edit-qty-col">
