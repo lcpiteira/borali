@@ -1,0 +1,16 @@
+{
+    "name": "BoraAli",
+    "short_name": "BoraAli",
+    "description": "Lista de compras cooperativa para férias",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#f8f9fa",
+    "theme_color": "#1a73e8",
+    "icons": [
+        {
+            "src": "favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml"
+        }
+    ]
+}

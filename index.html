@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1a73e8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>BoraAli - Lista de Compras Cooperativa</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+</head>
+<body>
+    <div class="app">
+        <!-- Loading Screen -->
+        <div class="screen" id="loadingScreen">
+            <div class="card center-card">
+                <h1>🛒 BoraAli</h1>
+                <p class="subtitle">A carregar...</p>
+                <div class="spinner"></div>
+            </div>
+        </div>
+
+        <!-- Login Screen -->
+        <div class="screen" id="loginScreen" style="display: none;">
+            <div class="card center-card">
+                <h1>🛒 BoraAli</h1>
+                <p class="subtitle">Lista de compras cooperativa para férias</p>
+                <button class="btn btn-google" id="googleLogin">
+                    <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Entrar com Google
+                </button>
+                <p class="login-note">Gratuito • Sem passwords • Colaborativo</p>
+            </div>
+        </div>
+
+        <!-- Groups Screen -->
+        <div class="screen" id="groupsScreen" style="display: none;">
+            <div class="container">
+                <div class="screen-header">
+                    <h1>🛒 Os meus grupos</h1>
+                    <div class="header-actions">
+                        <span class="user-name" id="userNameGroups"></span>
+                        <button class="btn-link" id="logoutBtnGroups">Sair</button>
+                    </div>
+                </div>
+                <div class="groups-list" id="groupsList"></div>
+                <div class="groups-actions">
+                    <div class="action-row">
+                        <input type="text" id="newGroupName" placeholder="Nome do grupo (ex: Férias Algarve)" class="input-field">
+                        <button class="btn btn-primary" id="createGroupBtn">+ Criar</button>
+                    </div>
+                    <div class="divider"><span>ou</span></div>
+                    <div class="action-row">
+                        <input type="text" id="joinCode" placeholder="Código de convite" class="input-field" maxlength="6" style="text-transform: uppercase;">
+                        <button class="btn btn-secondary" id="joinGroupBtn">Juntar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shopping List Screen -->
+        <div class="screen" id="listScreen" style="display: none;">
+            <div class="container">
+                <div class="screen-header">
+                    <div class="header-left">
+                        <button class="btn-back" id="backToGroups">←</button>
+                        <h1 id="groupTitle">Lista</h1>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn-icon" id="groupInfoBtn" title="Info do grupo">ℹ️</button>
+                    </div>
+                </div>
+
+                <!-- Add Item Form -->
+                <div class="add-item-form">
+                    <div class="add-item-row">
+                        <input type="text" id="itemName" placeholder="Artigo (ex: Leite)" class="input-field">
+                        <input type="number" id="itemQty" placeholder="Qtd" class="input-field input-small" min="1" value="1">
+                        <input type="text" id="itemUnit" placeholder="un" class="input-field input-tiny">
+                        <button class="btn btn-primary" id="addItemBtn">+</button>
+                    </div>
+                </div>
+
+                <!-- Items List -->
+                <div class="items-section">
+                    <div class="items-header">
+                        <h2>🧾 Por comprar</h2>
+                        <span class="items-count" id="pendingCount">0</span>
+                    </div>
+                    <div class="items-list" id="pendingItems"></div>
+                </div>
+
+                <div class="items-section checked-section">
+                    <div class="items-header">
+                        <h2>✅ Comprado</h2>
+                        <span class="items-count" id="checkedCount">0</span>
+                        <button class="btn-link btn-clear" id="clearCheckedBtn" style="display:none;">Limpar</button>
+                    </div>
+                    <div class="items-list" id="checkedItems"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Info Modal -->
+        <div class="modal-overlay" id="groupInfoModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 id="modalGroupName">Grupo</h2>
+                    <button class="btn-close" id="closeModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-section">
+                        <h3>📋 Código de convite</h3>
+                        <div class="code-display">
+                            <span id="groupCode">------</span>
+                            <button class="btn-copy" id="copyCodeBtn">Copiar</button>
+                        </div>
+                        <p class="info-note">Partilha este código para outros se juntarem</p>
+                    </div>
+                    <div class="info-section">
+                        <h3>👥 Membros</h3>
+                        <div class="members-list" id="membersList"></div>
+                    </div>
+                    <div class="info-section master-only" id="masterSection" style="display:none;">
+                        <h3>⚙️ Administração</h3>
+                        <button class="btn btn-danger" id="deleteGroupBtn">Eliminar grupo</button>
+                    </div>
+                    <div class="info-section" id="leaveSection">
+                        <button class="btn btn-secondary" id="leaveGroupBtn">Sair do grupo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <!-- Firebase SDK (compat - free tier) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
