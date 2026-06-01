@@ -1051,8 +1051,9 @@
         var pending = [], checked = [];
         Object.keys(currentItems).forEach(function (id) {
             var it = currentItems[id];
-            var desc = it.name + (it.quantity ? ' (' + it.quantity + (it.unit ? ' ' + it.unit : '') + ')' : '') +
-                       (it.category ? ' [' + getCategory(it.category).label + ']' : '') +
+            var desc = '[id:' + id + '] ' + it.name +
+                       (it.quantity ? ' (' + it.quantity + (it.unit ? ' ' + it.unit : '') + ')' : '') +
+                       ' [categoria: ' + (it.category || 'outros') + ']' +
                        ' — adicionado por ' + (it.addedByName || 'alguém');
             if (it.checked) checked.push(desc); else pending.push(desc);
         });
@@ -1062,6 +1063,7 @@
 
         var memberNames = Object.values(currentMembers).map(function (m) { return m.name || 'Alguém'; });
         lines.push('Membros do grupo: ' + (memberNames.length ? memberNames.join(', ') : 'só tu'));
+        lines.push('Categorias disponíveis: ' + CATEGORIES.map(function(c){ return c.key; }).join(', '));
         return lines.join('\n');
     }
 
@@ -1093,8 +1095,30 @@
             },
             {
                 name: 'getListSummary',
-                description: 'Obtém um resumo actualizado da lista de compras.',
+                description: 'Obtém um resumo actualizado da lista de compras, incluindo os IDs dos itens.',
                 parameters: { type: 'OBJECT', properties: {} }
+            },
+            {
+                name: 'updateItemCategories',
+                description: 'Actualiza a categoria de um ou mais artigos existentes na lista. Usa os IDs que aparecem no contexto da lista.',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        updates: {
+                            type: 'ARRAY',
+                            description: 'Lista de actualizações a fazer',
+                            items: {
+                                type: 'OBJECT',
+                                properties: {
+                                    itemId:   { type: 'STRING', description: 'ID do artigo (ex: -Ou23xUw...)' },
+                                    category: { type: 'STRING', description: 'Nova categoria: frutas, lacticinios, padaria, carne, mercearia, bebidas, higiene, limpeza, congelados, outros' }
+                                },
+                                required: ['itemId', 'category']
+                            }
+                        }
+                    },
+                    required: ['updates']
+                }
             }
         ]
     }];
@@ -1124,6 +1148,22 @@
         }
         if (name === 'getListSummary') {
             return { summary: buildShoppingContext() };
+        }
+        if (name === 'updateItemCategories') {
+            var updates = args.updates || [];
+            var updated = [], failed = [];
+            updates.forEach(function (u) {
+                if (!u.itemId || !u.category) return;
+                var validKeys = CATEGORIES.map(function(c){ return c.key; });
+                var cat = validKeys.indexOf(u.category) >= 0 ? u.category : 'outros';
+                if (currentItems[u.itemId]) {
+                    db.ref('groups/' + currentGroupId + '/items/' + u.itemId).update({ category: cat });
+                    updated.push((currentItems[u.itemId].name || u.itemId) + ' → ' + cat);
+                } else {
+                    failed.push(u.itemId);
+                }
+            });
+            return { success: true, updated: updated, failed: failed };
         }
         return { error: 'Ferramenta desconhecida: ' + name };
     }
