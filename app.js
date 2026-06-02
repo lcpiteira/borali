@@ -12,6 +12,9 @@
         appId: "1:341111325815:web:82bc34398134d13030b272"
     };
 
+    // === Google Identity Services ===
+    const GOOGLE_CLIENT_ID = '341111325815-es2sukq3130fe880bs7l7qd6cv282u31.apps.googleusercontent.com';
+
     // === Categories ===
     const CATEGORIES = [
         { key: 'frutas',     label: 'Frutas e Vegetais', emoji: '🥦' },
@@ -40,6 +43,7 @@
     let currentMembers = {};
     let viewMode = 'mine'; // 'all' | 'mine' (only when run is active)
     let listeners = [];
+    let gisTokenClient = null;
     const GEMINI_MODEL = 'gemini-2.5-flash';
     let geminiApiKey = null;
 
@@ -96,6 +100,11 @@
     const leaveSectionEl = document.getElementById('leaveSection');
     const deleteGroupBtn = document.getElementById('deleteGroupBtn');
     const leaveGroupBtn = document.getElementById('leaveGroupBtn');
+    const transferAdminModal = document.getElementById('transferAdminModal');
+    const closeTransferAdminModalBtn = document.getElementById('closeTransferAdminModal');
+    const transferCandidatesListEl = document.getElementById('transferCandidatesList');
+    const confirmTransferBtn = document.getElementById('confirmTransferBtn');
+    let transferSelectedUid = null;
     const toastEl = document.getElementById('toast');
 
     // === Expenses DOM ===
@@ -190,22 +199,12 @@
 
         auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
-        // Only process redirect result if we intentionally started one
-        if (sessionStorage.getItem('firebaseRedirectPending')) {
-            sessionStorage.removeItem('firebaseRedirectPending');
-            auth.getRedirectResult().then(function (result) {
-                if (result.user) {
-                    console.log('Redirect login:', result.user.email);
-                }
-            }).catch(function (err) {
-                console.error('Redirect error:', err);
-            });
-        }
+        // Defensive cleanup of legacy redirect flag from previous versions
+        try { sessionStorage.removeItem('firebaseRedirectPending'); } catch (e) {}
 
         auth.onAuthStateChanged(function (user) {
             if (user) {
                 currentUser = user;
-                // Load Gemini API key now that user is authenticated
                 db.ref('config/geminiApiKey').once('value', function (snap) {
                     geminiApiKey = snap.val() || null;
                 });
@@ -216,10 +215,60 @@
                 showScreen('login');
             }
         });
+
+        initGoogleIdentityServices();
+    }
+
+    function initGoogleIdentityServices() {
+        var attempts = 0;
+        function tryInit() {
+            if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+                if (++attempts > 50) {
+                    console.warn('GIS failed to load after 5s');
+                    return;
+                }
+                setTimeout(tryInit, 100);
+                return;
+            }
+            gisTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: 'openid email profile',
+                callback: handleGoogleTokenResponse,
+                error_callback: function (err) {
+                    console.error('GIS error:', err);
+                    if (err && err.type !== 'popup_closed') {
+                        showToast('Erro Google: ' + (err.message || err.type));
+                    }
+                }
+            });
+        }
+        tryInit();
+    }
+
+    function triggerGoogleLogin() {
+        if (!gisTokenClient) {
+            showToast('A preparar Google, tenta de novo num instante');
+            return;
+        }
+        gisTokenClient.requestAccessToken({ prompt: '' });
+    }
+
+    function handleGoogleTokenResponse(response) {
+        if (!response || !response.access_token) {
+            if (response && response.error) showToast('Erro: ' + response.error);
+            return;
+        }
+        var credential = firebase.auth.GoogleAuthProvider.credential(null, response.access_token);
+        showScreen('loading');
+        auth.signInWithCredential(credential).catch(function (err) {
+            console.error('signInWithCredential error:', err);
+            showToast('Erro: ' + err.message);
+            showScreen('login');
+        });
     }
 
     function bindEvents() {
-        googleLoginBtn.addEventListener('click', handleGoogleLogin);
+        googleLoginBtn.addEventListener('click', triggerGoogleLogin);
         var openInSafariBtn = document.getElementById('openInSafariBtn');
         if (openInSafariBtn) {
             openInSafariBtn.addEventListener('click', function () {
@@ -255,6 +304,11 @@
         shareCodeBtn.addEventListener('click', handleShareCode);
         deleteGroupBtn.addEventListener('click', handleDeleteGroup);
         leaveGroupBtn.addEventListener('click', handleLeaveGroup);
+        closeTransferAdminModalBtn.addEventListener('click', closeTransferAdminModal);
+        transferAdminModal.addEventListener('click', function (e) {
+            if (e.target === transferAdminModal) closeTransferAdminModal();
+        });
+        confirmTransferBtn.addEventListener('click', handleConfirmTransfer);
         clearCheckedBtn.addEventListener('click', handleClearChecked);
         closeEditModalBtn.addEventListener('click', closeEditModal);
         editItemModal.addEventListener('click', function (e) {
@@ -276,6 +330,7 @@
             else if (distributeModal.style.display !== 'none') closeDistributeModal();
             else if (expenseModal.style.display !== 'none') closeExpenseModal();
             else if (settleModal.style.display !== 'none') closeSettleModal();
+            else if (transferAdminModal.style.display !== 'none') closeTransferAdminModal();
         });
         closeDistributeModalBtn.addEventListener('click', closeDistributeModal);
         distributeModal.addEventListener('click', function (e) {
@@ -415,33 +470,6 @@
         return /FBAN|FBAV|Instagram|WhatsApp|MicroMessenger|Line\/|Twitter\/|Snapchat/i.test(ua);
     }
 
-    function handleGoogleLogin() {
-        if (isInAppBrowser()) {
-            document.getElementById('inappWarning').style.display = '';
-            document.getElementById('googleLogin').style.display = 'none';
-            return;
-        }
-        var provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider).then(function (result) {
-            // Success - onAuthStateChanged will handle the rest
-        }).catch(function (err) {
-            console.error('Popup login error:', err.code, err.message);
-            if (err.code === 'auth/popup-blocked' ||
-                err.code === 'auth/popup-closed-by-user' ||
-                err.code === 'auth/cancelled-popup-request') {
-                // Fallback to redirect (works on Android Chrome, may fail on Safari)
-                try { sessionStorage.setItem('firebaseRedirectPending', '1'); } catch (e) {}
-                showScreen('loading');
-                auth.signInWithRedirect(provider);
-            } else if (err.code === 'auth/web-storage-unsupported' ||
-                       err.code === 'auth/operation-not-supported-in-this-environment') {
-                document.getElementById('inappWarning').style.display = '';
-                document.getElementById('googleLogin').style.display = 'none';
-            } else {
-                showToast('Erro ao entrar: ' + err.message);
-            }
-        });
-    }
 
     function handleLogout() {
         detachListeners();
@@ -1437,7 +1465,7 @@
 
             var isMaster = g.master === currentUser.uid;
             masterSectionEl.style.display = isMaster ? '' : 'none';
-            leaveSectionEl.style.display = isMaster ? 'none' : '';
+            leaveSectionEl.style.display = '';
 
             membersListEl.innerHTML = '';
             if (g.members) {
@@ -1538,18 +1566,105 @@
     }
 
     function handleLeaveGroup() {
-        if (!confirm('Tens a certeza que queres sair deste grupo?')) return;
+        var gid = currentGroupId;
+        db.ref('groups/' + gid).once('value', function (snap) {
+            var g = snap.val();
+            if (!g) return;
+            var isMaster = g.master === currentUser.uid;
+            var members = g.members || {};
+            var otherUids = Object.keys(members).filter(function (uid) { return uid !== currentUser.uid; });
 
+            if (isMaster && otherUids.length === 0) {
+                if (!confirm('És o único membro do grupo. Sair vai apagar o grupo e tudo o que está dentro. Continuar?')) return;
+                deleteGroupAndExit();
+                return;
+            }
+            if (isMaster) {
+                openTransferAdminModal(otherUids, members);
+                return;
+            }
+            if (!confirm('Tens a certeza que queres sair deste grupo?')) return;
+            doLeaveGroup(null);
+        });
+    }
+
+    function openTransferAdminModal(otherUids, members) {
+        transferSelectedUid = otherUids[0] || null;
+        transferCandidatesListEl.innerHTML = otherUids.map(function (uid) {
+            var m = members[uid] || {};
+            var name = shortName(m.name) || 'Utilizador';
+            var checked = uid === transferSelectedUid;
+            return '<label class="payer-chip ' + (checked ? 'checked' : '') + '">' +
+                '<input type="radio" name="transferCandidate" value="' + uid + '" ' + (checked ? 'checked' : '') + '>' +
+                '<span>' + escapeHtml(name) + '</span>' +
+                '</label>';
+        }).join('');
+        transferCandidatesListEl.querySelectorAll('input[type=radio]').forEach(function (r) {
+            r.addEventListener('change', function () {
+                transferSelectedUid = r.value;
+                transferCandidatesListEl.querySelectorAll('.payer-chip').forEach(function (chip) {
+                    var inp = chip.querySelector('input');
+                    chip.classList.toggle('checked', inp.value === transferSelectedUid);
+                });
+            });
+        });
+        transferAdminModal.style.display = 'flex';
+    }
+
+    function closeTransferAdminModal() {
+        transferAdminModal.style.display = 'none';
+        transferSelectedUid = null;
+    }
+
+    function handleConfirmTransfer() {
+        if (!transferSelectedUid) { showToast('Escolhe um administrador'); return; }
+        doLeaveGroup(transferSelectedUid);
+    }
+
+    function doLeaveGroup(newMasterUid) {
+        var gid = currentGroupId;
         var updates = {};
-        updates['groups/' + currentGroupId + '/members/' + currentUser.uid] = null;
-        updates['users/' + currentUser.uid + '/groups/' + currentGroupId] = null;
+        if (newMasterUid) {
+            updates['groups/' + gid + '/master'] = newMasterUid;
+        }
+        updates['groups/' + gid + '/members/' + currentUser.uid] = null;
+        updates['users/' + currentUser.uid + '/groups/' + gid] = null;
 
         db.ref().update(updates).then(function () {
+            closeTransferAdminModal();
             hideGroupInfo();
             detachListeners();
             currentGroupId = null;
+            currentGroupName = null;
+            aiFabEl.style.display = 'none';
             showGroups();
             showToast('Saíste do grupo');
+        }).catch(function (err) {
+            showToast('Erro: ' + err.message);
+        });
+    }
+
+    function deleteGroupAndExit() {
+        var gid = currentGroupId;
+        db.ref('groups/' + gid).once('value', function (snap) {
+            var g = snap.val();
+            if (!g) return;
+            var updates = {};
+            updates['groups/' + gid] = null;
+            if (g.members) {
+                Object.keys(g.members).forEach(function (uid) {
+                    updates['users/' + uid + '/groups/' + gid] = null;
+                });
+            }
+            db.ref().update(updates).then(function () {
+                hideGroupInfo();
+                detachListeners();
+                currentGroupId = null;
+                currentGroupName = null;
+                aiFabEl.style.display = 'none';
+                showGroups();
+                showToast('Grupo apagado');
+            }).catch(function (err) { showToast('Erro: ' + err.message); });
         });
     }
 
