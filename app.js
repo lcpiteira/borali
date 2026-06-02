@@ -607,29 +607,21 @@
                 return;
             }
 
-            // Check if already member
-            db.ref('groups/' + gid + '/members/' + currentUser.uid).once('value', function (memberSnap) {
-                if (memberSnap.exists()) {
-                    showToast('Já fazes parte deste grupo!');
-                    joinCodeEl.value = '';
-                    return;
-                }
+            // Try to join directly — if already a member, the write is harmless (idempotent)
+            var updates = {};
+            updates['groups/' + gid + '/members/' + currentUser.uid] = {
+                name: currentUser.displayName || 'Utilizador',
+                email: currentUser.email || '',
+                photoURL: currentUser.photoURL || '',
+                joinedAt: firebase.database.ServerValue.TIMESTAMP
+            };
+            updates['users/' + currentUser.uid + '/groups/' + gid] = true;
 
-                var updates = {};
-                updates['groups/' + gid + '/members/' + currentUser.uid] = {
-                    name: currentUser.displayName || 'Utilizador',
-                    email: currentUser.email || '',
-                    photoURL: currentUser.photoURL || '',
-                    joinedAt: firebase.database.ServerValue.TIMESTAMP
-                };
-                updates['users/' + currentUser.uid + '/groups/' + gid] = true;
-
-                db.ref().update(updates).then(function () {
-                    joinCodeEl.value = '';
-                    showToast('Juntaste-te ao grupo! 🎉');
-                }).catch(function (err) {
-                    showToast('Erro: ' + err.message);
-                });
+            db.ref().update(updates).then(function () {
+                joinCodeEl.value = '';
+                showToast('Juntaste-te ao grupo! 🎉');
+            }).catch(function (err) {
+                showToast('Erro: ' + err.message);
             });
         });
     }
