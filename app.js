@@ -196,6 +196,13 @@
             }
         }).catch(function (err) {
             console.error('Redirect error:', err);
+            if (err.code === 'auth/web-storage-unsupported' ||
+                err.code === 'auth/operation-not-supported-in-this-environment') {
+                document.getElementById('inappWarning').style.display = '';
+                document.getElementById('googleLogin').style.display = 'none';
+            } else {
+                showToast('Erro ao entrar: ' + err.message);
+            }
         });
 
         auth.onAuthStateChanged(function (user) {
@@ -216,6 +223,17 @@
 
     function bindEvents() {
         googleLoginBtn.addEventListener('click', handleGoogleLogin);
+        var openInSafariBtn = document.getElementById('openInSafariBtn');
+        if (openInSafariBtn) {
+            openInSafariBtn.addEventListener('click', function () {
+                window.location.href = window.location.href;
+            });
+        }
+        // Show in-app browser warning immediately on load if applicable
+        if (isInAppBrowser()) {
+            document.getElementById('inappWarning').style.display = '';
+            googleLoginBtn.style.display = 'none';
+        }
         logoutBtnGroups.addEventListener('click', handleLogout);
         createGroupBtn.addEventListener('click', handleCreateGroup);
         joinGroupBtn.addEventListener('click', handleJoinGroup);
@@ -395,12 +413,35 @@
     }
 
     // === Auth ===
+    function isInAppBrowser() {
+        var ua = navigator.userAgent || '';
+        return /FBAN|FBAV|Instagram|WhatsApp|MicroMessenger|Line\/|Twitter\/|Snapchat/i.test(ua);
+    }
+
+    function isMobile() {
+        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    }
+
     function handleGoogleLogin() {
+        if (isInAppBrowser()) {
+            document.getElementById('inappWarning').style.display = '';
+            document.getElementById('googleLogin').style.display = 'none';
+            return;
+        }
         var provider = new firebase.auth.GoogleAuthProvider();
+        if (isMobile()) {
+            // Redirect is more reliable than popup on mobile browsers
+            showScreen('loading');
+            auth.signInWithRedirect(provider);
+            return;
+        }
         auth.signInWithPopup(provider).catch(function (err) {
             if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-                showToast('Popup bloqueado, a tentar redirect...');
+                showScreen('loading');
                 auth.signInWithRedirect(provider);
+            } else if (err.code === 'auth/web-storage-unsupported' || err.code === 'auth/operation-not-supported-in-this-environment') {
+                document.getElementById('inappWarning').style.display = '';
+                document.getElementById('googleLogin').style.display = 'none';
             } else {
                 showToast('Erro: ' + err.message);
             }

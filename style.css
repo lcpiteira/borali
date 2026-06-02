@@ -92,6 +92,19 @@ body {
     margin-top: 16px;
 }
 
+.inapp-warning {
+    background: #fef9c3;
+    border: 1px solid #ca8a04;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+    color: #713f12;
+    text-align: center;
+}
+.inapp-warning p { margin: 0 0 8px; }
+.inapp-warning p:last-of-type { margin-bottom: 12px; }
+
 /* Buttons */
 .btn {
     display: inline-flex;
