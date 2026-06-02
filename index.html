@@ -73,30 +73,51 @@
                     </div>
                 </div>
 
-                <!-- Run Bar (sticky beneath header) -->
-                <div class="run-bar" id="runBar"></div>
+                <!-- Tab Nav -->
+                <nav class="tab-nav" id="tabNav">
+                    <button class="tab-btn active" data-tab="list">🛒 Lista</button>
+                    <button class="tab-btn" data-tab="expenses">💰 Despesas</button>
+                </nav>
 
-                <!-- Items List -->
-                <div class="items-section">
-                    <div class="items-header">
-                        <h2>🧾 Por comprar</h2>
-                        <span class="items-count" id="pendingCount">0</span>
+                <!-- List View -->
+                <div class="view view-list" id="viewList">
+                    <!-- Run Bar (beneath header) -->
+                    <div class="run-bar" id="runBar"></div>
+
+                    <!-- Items List -->
+                    <div class="items-section">
+                        <div class="items-header">
+                            <h2>🧾 Por comprar</h2>
+                            <span class="items-count" id="pendingCount">0</span>
+                        </div>
+                        <div class="items-list" id="pendingItems"></div>
                     </div>
-                    <div class="items-list" id="pendingItems"></div>
+
+                    <div class="items-section checked-section">
+                        <div class="items-header">
+                            <h2>✅ Comprado</h2>
+                            <span class="items-count" id="checkedCount">0</span>
+                            <button class="btn-link btn-clear" id="clearCheckedBtn" style="display:none;">Limpar</button>
+                        </div>
+                        <div class="items-list" id="checkedItems"></div>
+                    </div>
                 </div>
 
-                <div class="items-section checked-section">
-                    <div class="items-header">
-                        <h2>✅ Comprado</h2>
-                        <span class="items-count" id="checkedCount">0</span>
-                        <button class="btn-link btn-clear" id="clearCheckedBtn" style="display:none;">Limpar</button>
+                <!-- Expenses View -->
+                <div class="view view-expenses" id="viewExpenses" style="display:none;">
+                    <div class="balance-summary" id="balanceSummary"></div>
+                    <div class="expenses-section">
+                        <div class="items-header">
+                            <h2>💰 Despesas</h2>
+                            <span class="items-count" id="expensesCount">0</span>
+                        </div>
+                        <div class="expenses-list" id="expensesList"></div>
                     </div>
-                    <div class="items-list" id="checkedItems"></div>
                 </div>
             </div>
 
-            <!-- Add Item Form (sticky bottom) -->
-            <div class="add-item-form">
+            <!-- Add Item Form (sticky bottom, list tab) -->
+            <div class="add-item-form" id="addItemForm">
                 <div class="add-item-row">
                     <input type="text" id="itemName" placeholder="Artigo (ex: Leite)" class="input-field">
                 </div>
@@ -106,6 +127,11 @@
                     <input type="text" id="itemUnit" placeholder="un" class="input-field input-tiny">
                     <button class="btn btn-primary" id="addItemBtn">+</button>
                 </div>
+            </div>
+
+            <!-- Add Expense Button (sticky bottom, expenses tab) -->
+            <div class="add-expense-bar" id="addExpenseBar" style="display:none;">
+                <button class="btn btn-primary btn-add-expense" id="addExpenseBtn">+ Nova despesa</button>
             </div>
         </div>
 
@@ -136,6 +162,68 @@
                     </div>
                     <div class="info-section" id="leaveSection">
                         <button class="btn btn-secondary" id="leaveGroupBtn">Sair do grupo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expense Modal (add/edit) -->
+        <div class="modal-overlay" id="expenseModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 id="expenseModalTitle">Nova despesa</h2>
+                    <button class="btn-close" id="closeExpenseModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-section">
+                        <label class="edit-label" for="expenseDescription">Descrição</label>
+                        <input type="text" id="expenseDescription" class="input-field" placeholder="Ex: Jantar Algarve">
+                    </div>
+                    <div class="info-section edit-qty-row">
+                        <div class="edit-qty-col">
+                            <label class="edit-label" for="expenseAmount">Valor (€)</label>
+                            <input type="text" inputmode="decimal" id="expenseAmount" class="input-field" placeholder="0,00">
+                        </div>
+                        <div class="edit-qty-col">
+                            <label class="edit-label" for="expenseCategory">Categoria</label>
+                            <select id="expenseCategory" class="input-field"></select>
+                        </div>
+                    </div>
+                    <div class="info-section">
+                        <label class="edit-label">Quem pagou</label>
+                        <div class="expense-payer-list" id="expensePayerList"></div>
+                    </div>
+                    <div class="info-section">
+                        <label class="edit-label">Dividir entre <button type="button" class="btn-link select-all-link" id="expenseSelectAll">selecionar todos</button></label>
+                        <div class="expense-participants-list" id="expenseParticipantsList"></div>
+                        <p class="info-note" id="expenseShareNote"></p>
+                    </div>
+                    <div class="info-section expense-actions">
+                        <button class="btn btn-secondary" id="deleteExpenseBtn" style="display:none;">Apagar</button>
+                        <button class="btn btn-primary" id="saveExpenseBtn">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settle-up Modal -->
+        <div class="modal-overlay" id="settleModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>Marcar como pago</h2>
+                    <button class="btn-close" id="closeSettleModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-section">
+                        <p id="settleSummary" class="settle-summary"></p>
+                    </div>
+                    <div class="info-section">
+                        <label class="edit-label" for="settleAmount">Valor pago (€)</label>
+                        <input type="text" inputmode="decimal" id="settleAmount" class="input-field" placeholder="0,00">
+                        <p class="info-note">Por defeito o saldo total entre vocês. Editas se queres só uma parte.</p>
+                    </div>
+                    <div class="info-section">
+                        <button class="btn btn-primary" id="confirmSettleBtn">Confirmar</button>
                     </div>
                 </div>
             </div>

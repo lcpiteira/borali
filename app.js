@@ -98,6 +98,42 @@
     const leaveGroupBtn = document.getElementById('leaveGroupBtn');
     const toastEl = document.getElementById('toast');
 
+    // === Expenses DOM ===
+    const tabNavEl = document.getElementById('tabNav');
+    const viewListEl = document.getElementById('viewList');
+    const viewExpensesEl = document.getElementById('viewExpenses');
+    const addItemFormEl = document.getElementById('addItemForm');
+    const addExpenseBarEl = document.getElementById('addExpenseBar');
+    const addExpenseBtn = document.getElementById('addExpenseBtn');
+    const balanceSummaryEl = document.getElementById('balanceSummary');
+    const expensesListEl = document.getElementById('expensesList');
+    const expensesCountEl = document.getElementById('expensesCount');
+    const expenseModal = document.getElementById('expenseModal');
+    const expenseModalTitleEl = document.getElementById('expenseModalTitle');
+    const closeExpenseModalBtn = document.getElementById('closeExpenseModal');
+    const expenseDescriptionEl = document.getElementById('expenseDescription');
+    const expenseAmountEl = document.getElementById('expenseAmount');
+    const expenseCategoryEl = document.getElementById('expenseCategory');
+    const expensePayerListEl = document.getElementById('expensePayerList');
+    const expenseParticipantsListEl = document.getElementById('expenseParticipantsList');
+    const expenseShareNoteEl = document.getElementById('expenseShareNote');
+    const expenseSelectAllBtn = document.getElementById('expenseSelectAll');
+    const saveExpenseBtn = document.getElementById('saveExpenseBtn');
+    const deleteExpenseBtn = document.getElementById('deleteExpenseBtn');
+    const settleModal = document.getElementById('settleModal');
+    const closeSettleModalBtn = document.getElementById('closeSettleModal');
+    const settleSummaryEl = document.getElementById('settleSummary');
+    const settleAmountEl = document.getElementById('settleAmount');
+    const confirmSettleBtn = document.getElementById('confirmSettleBtn');
+
+    let activeTab = 'list'; // 'list' | 'expenses'
+    let currentExpenses = {};
+    let currentSettlements = {};
+    let expenseEditingId = null;
+    let expensePayer = null; // uid
+    let expenseParticipants = []; // uid[]
+    let settleContext = null; // { fromUid, toUid, suggestedCents }
+
     // === AI DOM ===
     const aiFabEl = document.getElementById('aiFab');
     const aiDrawerEl = document.getElementById('aiDrawer');
@@ -118,6 +154,33 @@
         itemCategoryEl.innerHTML = html;
         itemCategoryEl.value = 'outros';
         editItemCategoryEl.innerHTML = html;
+        expenseCategoryEl.innerHTML = html;
+    }
+
+    // === Money helpers (store cents int, display EUR with comma) ===
+    function parseAmountToCents(input) {
+        if (!input) return NaN;
+        var s = String(input).trim().replace(',', '.');
+        if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN;
+        var f = parseFloat(s);
+        return Math.round(f * 100);
+    }
+
+    function formatCents(cents) {
+        if (typeof cents !== 'number' || isNaN(cents)) return '0,00 €';
+        var euros = Math.floor(Math.abs(cents) / 100);
+        var rest = Math.abs(cents) % 100;
+        var sign = cents < 0 ? '-' : '';
+        return sign + euros + ',' + (rest < 10 ? '0' + rest : rest) + ' €';
+    }
+
+    function splitEqualCents(totalCents, n) {
+        if (n <= 0) return [];
+        var base = Math.floor(totalCents / n);
+        var remainder = totalCents - base * n;
+        var shares = [];
+        for (var i = 0; i < n; i++) shares.push(base + (i < remainder ? 1 : 0));
+        return shares;
     }
 
     function initFirebase() {
@@ -194,8 +257,11 @@
             if (e.key === 'Enter') handleSaveEdit();
         });
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && editItemModal.style.display !== 'none') closeEditModal();
-            if (e.key === 'Escape' && distributeModal.style.display !== 'none') closeDistributeModal();
+            if (e.key !== 'Escape') return;
+            if (editItemModal.style.display !== 'none') closeEditModal();
+            else if (distributeModal.style.display !== 'none') closeDistributeModal();
+            else if (expenseModal.style.display !== 'none') closeExpenseModal();
+            else if (settleModal.style.display !== 'none') closeSettleModal();
         });
         closeDistributeModalBtn.addEventListener('click', closeDistributeModal);
         distributeModal.addEventListener('click', function (e) {
@@ -204,7 +270,34 @@
         startRunBtn.addEventListener('click', handleStartRun);
         runBarEl.addEventListener('click', handleRunBarClick);
 
+        // Expenses events
+        tabNavEl.addEventListener('click', function (e) {
+            var tab = e.target.getAttribute('data-tab');
+            if (tab) setActiveTab(tab);
+        });
+        addExpenseBtn.addEventListener('click', function () { openExpenseModal(null); });
+        closeExpenseModalBtn.addEventListener('click', closeExpenseModal);
+        expenseModal.addEventListener('click', function (e) {
+            if (e.target === expenseModal) closeExpenseModal();
+        });
+        saveExpenseBtn.addEventListener('click', handleSaveExpense);
+        deleteExpenseBtn.addEventListener('click', handleDeleteExpense);
+        expenseAmountEl.addEventListener('input', updateExpenseShareNote);
+        expenseSelectAllBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var memberUids = Object.keys(currentMembers);
+            expenseParticipants = expenseParticipants.length === memberUids.length ? [] : memberUids.slice();
+            renderExpenseParticipants();
+            updateExpenseShareNote();
+        });
+        closeSettleModalBtn.addEventListener('click', closeSettleModal);
+        settleModal.addEventListener('click', function (e) {
+            if (e.target === settleModal) closeSettleModal();
+        });
+        confirmSettleBtn.addEventListener('click', handleConfirmSettle);
+
         // AI events
+        setupAiFabDrag();
         aiFabEl.addEventListener('click', openAiDrawer);
         aiDrawerCloseBtn.addEventListener('click', closeAiDrawer);
         aiSendBtn.addEventListener('click', handleAiSend);
@@ -224,6 +317,82 @@
                 if (prompt) askGemini(prompt);
             });
         });
+    }
+
+    function setupAiFabDrag() {
+        var fab = aiFabEl;
+        var dragging = false;
+        var startX = 0, startY = 0, origX = 0, origY = 0;
+        var didMove = false;
+        var DRAG_THRESHOLD = 6;
+
+        function clampAndApply(x, y) {
+            var w = fab.offsetWidth || 54;
+            var h = fab.offsetHeight || 54;
+            var pad = 8;
+            x = Math.max(pad, Math.min(window.innerWidth - w - pad, x));
+            y = Math.max(pad, Math.min(window.innerHeight - h - pad, y));
+            fab.style.left = x + 'px';
+            fab.style.top = y + 'px';
+            fab.style.right = 'auto';
+            fab.style.bottom = 'auto';
+        }
+
+        function restorePosition() {
+            try {
+                var saved = JSON.parse(localStorage.getItem('aiFabPos') || 'null');
+                if (saved && typeof saved.x === 'number') clampAndApply(saved.x, saved.y);
+            } catch (e) {}
+        }
+        restorePosition();
+        window.addEventListener('resize', function () {
+            var rect = fab.getBoundingClientRect();
+            clampAndApply(rect.left, rect.top);
+        });
+
+        fab.addEventListener('pointerdown', function (e) {
+            dragging = true;
+            didMove = false;
+            startX = e.clientX;
+            startY = e.clientY;
+            var rect = fab.getBoundingClientRect();
+            origX = rect.left;
+            origY = rect.top;
+            fab.style.transition = 'none';
+            try { fab.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+
+        fab.addEventListener('pointermove', function (e) {
+            if (!dragging) return;
+            var dx = e.clientX - startX;
+            var dy = e.clientY - startY;
+            if (!didMove && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+                didMove = true;
+            }
+            if (didMove) clampAndApply(origX + dx, origY + dy);
+        });
+
+        function endDrag(e) {
+            if (!dragging) return;
+            dragging = false;
+            fab.style.transition = '';
+            try { fab.releasePointerCapture(e.pointerId); } catch (err) {}
+            if (didMove) {
+                var rect = fab.getBoundingClientRect();
+                localStorage.setItem('aiFabPos', JSON.stringify({ x: rect.left, y: rect.top }));
+            }
+        }
+        fab.addEventListener('pointerup', endDrag);
+        fab.addEventListener('pointercancel', endDrag);
+
+        // Capture-phase: suppress click if drag occurred
+        fab.addEventListener('click', function (e) {
+            if (didMove) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                didMove = false;
+            }
+        }, true);
     }
 
     // === Auth ===
@@ -431,7 +600,10 @@
         currentItems = {};
         currentRun = null;
         currentMembers = {};
+        currentExpenses = {};
+        currentSettlements = {};
         viewMode = 'mine';
+        setActiveTab('list');
         groupTitleEl.textContent = groupData.name;
         showScreen('list');
         attachGroupListeners(gid);
@@ -456,7 +628,28 @@
         attachListener(db.ref('groups/' + gid + '/members'), function (snap) {
             currentMembers = snap.val() || {};
             render();
+            renderExpensesView();
         });
+        attachListener(db.ref('groups/' + gid + '/expenses'), function (snap) {
+            currentExpenses = snap.val() || {};
+            renderExpensesView();
+        });
+        attachListener(db.ref('groups/' + gid + '/settlements'), function (snap) {
+            currentSettlements = snap.val() || {};
+            renderExpensesView();
+        });
+    }
+
+    function setActiveTab(tab) {
+        if (tab !== 'list' && tab !== 'expenses') return;
+        activeTab = tab;
+        tabNavEl.querySelectorAll('.tab-btn').forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+        });
+        viewListEl.style.display = tab === 'list' ? '' : 'none';
+        viewExpensesEl.style.display = tab === 'expenses' ? '' : 'none';
+        addItemFormEl.style.display = tab === 'list' ? '' : 'none';
+        addExpenseBarEl.style.display = tab === 'expenses' ? '' : 'none';
     }
 
     function attachListener(ref, cb) {
@@ -859,6 +1052,350 @@
             db.ref('groups/' + currentGroupId + '/shoppingRun').remove();
             showToast('Compras concluídas! 🎉');
         }
+    }
+
+    // === Expenses ===
+    function renderExpensesView() {
+        renderBalanceSummary();
+        renderExpenseList();
+    }
+
+    function activeExpenses() {
+        return Object.keys(currentExpenses)
+            .map(function (id) { var e = currentExpenses[id]; e._id = id; return e; })
+            .filter(function (e) { return !e.deleted; });
+    }
+
+    function activeSettlements() {
+        return Object.keys(currentSettlements)
+            .map(function (id) { var s = currentSettlements[id]; s._id = id; return s; })
+            .filter(function (s) { return !s.deleted; });
+    }
+
+    function computeBalances() {
+        // balances[uid] = cents (positive = group owes user, negative = user owes group)
+        var bal = {};
+        Object.keys(currentMembers).forEach(function (uid) { bal[uid] = 0; });
+        activeExpenses().forEach(function (e) {
+            var participants = e.participants || [];
+            if (participants.length === 0 || !e.paidBy || typeof e.amountCents !== 'number') return;
+            var shares = splitEqualCents(e.amountCents, participants.length);
+            // payer is credited the full amount, then debited their share if they participated
+            if (bal[e.paidBy] === undefined) bal[e.paidBy] = 0;
+            bal[e.paidBy] += e.amountCents;
+            participants.forEach(function (uid, i) {
+                if (bal[uid] === undefined) bal[uid] = 0;
+                bal[uid] -= shares[i];
+            });
+        });
+        activeSettlements().forEach(function (s) {
+            if (typeof s.amountCents !== 'number') return;
+            if (bal[s.fromUid] === undefined) bal[s.fromUid] = 0;
+            if (bal[s.toUid] === undefined) bal[s.toUid] = 0;
+            // fromUid pays toUid → from increases (paid off debt), to decreases (received payment)
+            bal[s.fromUid] += s.amountCents;
+            bal[s.toUid]   -= s.amountCents;
+        });
+        return bal;
+    }
+
+    function simplifyDebts(balances) {
+        // Greedy matcher: largest creditor paired with largest debtor.
+        var creditors = [];
+        var debtors = [];
+        Object.keys(balances).forEach(function (uid) {
+            var v = balances[uid];
+            if (v > 0) creditors.push({ uid: uid, amt: v });
+            else if (v < 0) debtors.push({ uid: uid, amt: -v });
+        });
+        creditors.sort(function (a, b) { return b.amt - a.amt; });
+        debtors.sort(function (a, b) { return b.amt - a.amt; });
+        var transfers = [];
+        var i = 0, j = 0;
+        while (i < debtors.length && j < creditors.length) {
+            var pay = Math.min(debtors[i].amt, creditors[j].amt);
+            if (pay > 0) transfers.push({ fromUid: debtors[i].uid, toUid: creditors[j].uid, amountCents: pay });
+            debtors[i].amt -= pay;
+            creditors[j].amt -= pay;
+            if (debtors[i].amt === 0) i++;
+            if (creditors[j].amt === 0) j++;
+        }
+        return transfers;
+    }
+
+    function renderBalanceSummary() {
+        var balances = computeBalances();
+        var myBalance = balances[currentUser.uid] || 0;
+        var hasAny = activeExpenses().length > 0 || activeSettlements().length > 0;
+
+        if (!hasAny) {
+            balanceSummaryEl.innerHTML = '<div class="balance-empty">Sem despesas ainda. Adiciona a primeira em baixo.</div>';
+            return;
+        }
+
+        var balanceClass = myBalance > 0 ? 'positive' : (myBalance < 0 ? 'negative' : 'zero');
+        var balanceLabel = myBalance > 0
+            ? 'O grupo deve-te'
+            : (myBalance < 0 ? 'Deves ao grupo' : 'Estás a zero');
+        var balanceValue = myBalance === 0 ? '✓' : formatCents(Math.abs(myBalance));
+
+        var transfers = simplifyDebts(balances);
+        var myTransfers = transfers.filter(function (t) { return t.fromUid === currentUser.uid || t.toUid === currentUser.uid; });
+        var transfersHtml = myTransfers.map(function (t) {
+            if (t.fromUid === currentUser.uid) {
+                return '<div class="balance-line owe">' +
+                    '<span>Deves <strong>' + formatCents(t.amountCents) + '</strong> a ' + escapeHtml(shortName(getMemberName(t.toUid))) + '</span>' +
+                    '<button class="btn-link btn-settle" data-from="' + t.fromUid + '" data-to="' + t.toUid + '" data-cents="' + t.amountCents + '">Marcar pago</button>' +
+                    '</div>';
+            } else {
+                return '<div class="balance-line owed">' +
+                    '<span>' + escapeHtml(shortName(getMemberName(t.fromUid))) + ' deve-te <strong>' + formatCents(t.amountCents) + '</strong></span>' +
+                    '<button class="btn-link btn-settle" data-from="' + t.fromUid + '" data-to="' + t.toUid + '" data-cents="' + t.amountCents + '">Recebido</button>' +
+                    '</div>';
+            }
+        }).join('');
+
+        balanceSummaryEl.innerHTML =
+            '<div class="balance-hero ' + balanceClass + '">' +
+                '<div class="balance-label">' + balanceLabel + '</div>' +
+                '<div class="balance-value">' + balanceValue + '</div>' +
+            '</div>' +
+            (transfersHtml ? '<div class="balance-transfers">' + transfersHtml + '</div>' : '<div class="balance-empty">Saldos zerados entre todos ✨</div>');
+
+        balanceSummaryEl.querySelectorAll('.btn-settle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                openSettleModal({
+                    fromUid: btn.getAttribute('data-from'),
+                    toUid: btn.getAttribute('data-to'),
+                    suggestedCents: parseInt(btn.getAttribute('data-cents'), 10) || 0
+                });
+            });
+        });
+    }
+
+    function renderExpenseList() {
+        var list = activeExpenses().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+        expensesCountEl.textContent = list.length;
+        if (list.length === 0) {
+            expensesListEl.innerHTML = '';
+            return;
+        }
+        expensesListEl.innerHTML = '';
+        list.forEach(function (e) {
+            expensesListEl.appendChild(createExpenseCard(e));
+        });
+    }
+
+    function createExpenseCard(e) {
+        var card = document.createElement('div');
+        card.className = 'expense-card';
+        var cat = getCategory(e.category);
+        var participants = e.participants || [];
+        var youParticipate = participants.indexOf(currentUser.uid) !== -1;
+        var youPaid = e.paidBy === currentUser.uid;
+        var shares = splitEqualCents(e.amountCents || 0, participants.length || 1);
+        var yourShare = 0;
+        if (youParticipate) {
+            var idx = participants.indexOf(currentUser.uid);
+            yourShare = shares[idx];
+        }
+        var youDelta = (youPaid ? (e.amountCents || 0) : 0) - yourShare;
+
+        var deltaHtml = '';
+        if (youDelta > 0) deltaHtml = '<span class="expense-delta positive">+' + formatCents(youDelta) + '</span>';
+        else if (youDelta < 0) deltaHtml = '<span class="expense-delta negative">' + formatCents(youDelta) + '</span>';
+        else deltaHtml = '<span class="expense-delta zero">—</span>';
+
+        var payerName = shortName(getMemberName(e.paidBy)) || 'Alguém';
+        var participantsHtml = participants.map(function (uid) { return shortName(getMemberName(uid)); }).join(', ');
+
+        card.innerHTML =
+            '<div class="expense-cat">' + cat.emoji + '</div>' +
+            '<div class="expense-details">' +
+                '<div class="expense-desc">' + escapeHtml(e.description || '(sem descrição)') + '</div>' +
+                '<div class="expense-meta">' + escapeHtml(payerName) + ' pagou ' + formatCents(e.amountCents || 0) +
+                    ' • ' + participants.length + (participants.length === 1 ? ' pessoa' : ' pessoas') +
+                '</div>' +
+            '</div>' +
+            '<div class="expense-side">' + deltaHtml + '</div>';
+
+        card.title = 'Dividido entre: ' + participantsHtml;
+        card.addEventListener('click', function () { openExpenseModal(e); });
+        return card;
+    }
+
+    function openExpenseModal(existingExpense) {
+        expenseEditingId = existingExpense ? existingExpense._id : null;
+        expenseModalTitleEl.textContent = existingExpense ? 'Editar despesa' : 'Nova despesa';
+        deleteExpenseBtn.style.display = existingExpense ? '' : 'none';
+
+        if (existingExpense) {
+            expenseDescriptionEl.value = existingExpense.description || '';
+            expenseAmountEl.value = (Math.abs(existingExpense.amountCents) / 100).toFixed(2).replace('.', ',');
+            expenseCategoryEl.value = getCategory(existingExpense.category).key;
+            expensePayer = existingExpense.paidBy || currentUser.uid;
+            expenseParticipants = (existingExpense.participants || []).slice();
+        } else {
+            expenseDescriptionEl.value = '';
+            expenseAmountEl.value = '';
+            expenseCategoryEl.value = 'outros';
+            expensePayer = currentUser.uid;
+            expenseParticipants = Object.keys(currentMembers); // default: split with everyone
+        }
+        renderExpensePayer();
+        renderExpenseParticipants();
+        updateExpenseShareNote();
+        expenseModal.style.display = 'flex';
+        setTimeout(function () { expenseDescriptionEl.focus(); }, 50);
+    }
+
+    function closeExpenseModal() {
+        expenseModal.style.display = 'none';
+        expenseEditingId = null;
+    }
+
+    function renderExpensePayer() {
+        var memberUids = Object.keys(currentMembers);
+        expensePayerListEl.innerHTML = memberUids.map(function (uid) {
+            var name = shortName(getMemberName(uid)) || 'Utilizador';
+            var checked = expensePayer === uid;
+            return '<label class="payer-chip ' + (checked ? 'checked' : '') + '">' +
+                '<input type="radio" name="payer" value="' + uid + '" ' + (checked ? 'checked' : '') + '>' +
+                '<span>' + escapeHtml(name) + '</span>' +
+                '</label>';
+        }).join('');
+        expensePayerListEl.querySelectorAll('input[type=radio]').forEach(function (r) {
+            r.addEventListener('change', function () {
+                expensePayer = r.value;
+                renderExpensePayer();
+            });
+        });
+    }
+
+    function renderExpenseParticipants() {
+        var memberUids = Object.keys(currentMembers);
+        expenseParticipantsListEl.innerHTML = memberUids.map(function (uid) {
+            var name = shortName(getMemberName(uid)) || 'Utilizador';
+            var checked = expenseParticipants.indexOf(uid) !== -1;
+            return '<label class="participant-chip ' + (checked ? 'checked' : '') + '">' +
+                '<input type="checkbox" value="' + uid + '" ' + (checked ? 'checked' : '') + '>' +
+                '<span>' + escapeHtml(name) + '</span>' +
+                '</label>';
+        }).join('');
+        expenseParticipantsListEl.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                var uid = cb.value;
+                if (cb.checked) {
+                    if (expenseParticipants.indexOf(uid) === -1) expenseParticipants.push(uid);
+                } else {
+                    expenseParticipants = expenseParticipants.filter(function (u) { return u !== uid; });
+                }
+                renderExpenseParticipants();
+                updateExpenseShareNote();
+            });
+        });
+    }
+
+    function updateExpenseShareNote() {
+        var cents = parseAmountToCents(expenseAmountEl.value);
+        if (isNaN(cents) || cents <= 0 || expenseParticipants.length === 0) {
+            expenseShareNoteEl.textContent = '';
+            return;
+        }
+        var shares = splitEqualCents(cents, expenseParticipants.length);
+        var min = Math.min.apply(null, shares);
+        var max = Math.max.apply(null, shares);
+        if (min === max) {
+            expenseShareNoteEl.textContent = 'Cada um paga ' + formatCents(min);
+        } else {
+            expenseShareNoteEl.textContent = 'Cada um paga ' + formatCents(min) + ' (alguns ' + formatCents(max) + ' pelo resto)';
+        }
+    }
+
+    function handleSaveExpense() {
+        var description = expenseDescriptionEl.value.trim();
+        if (!description) { showToast('Escreve uma descrição'); expenseDescriptionEl.focus(); return; }
+        var cents = parseAmountToCents(expenseAmountEl.value);
+        if (isNaN(cents) || cents <= 0) { showToast('Valor inválido'); expenseAmountEl.focus(); return; }
+        if (!expensePayer) { showToast('Escolhe quem pagou'); return; }
+        if (expenseParticipants.length === 0) { showToast('Escolhe pelo menos uma pessoa para dividir'); return; }
+
+        var data = {
+            description: description,
+            amountCents: cents,
+            category: expenseCategoryEl.value || 'outros',
+            paidBy: expensePayer,
+            paidByName: getMemberName(expensePayer),
+            participants: expenseParticipants.slice(),
+            createdBy: currentUser.uid,
+            createdByName: currentUser.displayName || 'Utilizador'
+        };
+
+        if (expenseEditingId) {
+            // Warn if any settlement exists for the pair — simplistic warning
+            var hasSettlements = activeSettlements().length > 0;
+            if (hasSettlements && !confirm('Já há liquidações no grupo. Alterar esta despesa vai mexer nos saldos. Continuar?')) return;
+            data.editedAt = firebase.database.ServerValue.TIMESTAMP;
+            data.editedBy = currentUser.uid;
+            db.ref('groups/' + currentGroupId + '/expenses/' + expenseEditingId).update(data)
+                .then(closeExpenseModal)
+                .catch(function (err) { showToast('Erro: ' + err.message); });
+        } else {
+            data.createdAt = firebase.database.ServerValue.TIMESTAMP;
+            data.deleted = false;
+            db.ref('groups/' + currentGroupId + '/expenses').push(data)
+                .then(closeExpenseModal)
+                .catch(function (err) { showToast('Erro: ' + err.message); });
+        }
+    }
+
+    function handleDeleteExpense() {
+        if (!expenseEditingId) return;
+        var hasSettlements = activeSettlements().length > 0;
+        var msg = hasSettlements
+            ? 'Já há liquidações no grupo. Apagar esta despesa vai mexer nos saldos. Continuar?'
+            : 'Apagar esta despesa?';
+        if (!confirm(msg)) return;
+        db.ref('groups/' + currentGroupId + '/expenses/' + expenseEditingId).update({
+            deleted: true,
+            deletedAt: firebase.database.ServerValue.TIMESTAMP,
+            deletedBy: currentUser.uid
+        }).then(closeExpenseModal)
+          .catch(function (err) { showToast('Erro: ' + err.message); });
+    }
+
+    function openSettleModal(ctx) {
+        settleContext = ctx;
+        var fromName = shortName(getMemberName(ctx.fromUid)) || 'Alguém';
+        var toName = shortName(getMemberName(ctx.toUid)) || 'Alguém';
+        settleSummaryEl.innerHTML = '<strong>' + escapeHtml(fromName) + '</strong> → <strong>' + escapeHtml(toName) + '</strong>';
+        settleAmountEl.value = (ctx.suggestedCents / 100).toFixed(2).replace('.', ',');
+        settleModal.style.display = 'flex';
+        setTimeout(function () { settleAmountEl.focus(); settleAmountEl.select(); }, 50);
+    }
+
+    function closeSettleModal() {
+        settleModal.style.display = 'none';
+        settleContext = null;
+    }
+
+    function handleConfirmSettle() {
+        if (!settleContext) return;
+        var cents = parseAmountToCents(settleAmountEl.value);
+        if (isNaN(cents) || cents <= 0) { showToast('Valor inválido'); return; }
+        db.ref('groups/' + currentGroupId + '/settlements').push({
+            fromUid: settleContext.fromUid,
+            fromName: getMemberName(settleContext.fromUid),
+            toUid: settleContext.toUid,
+            toName: getMemberName(settleContext.toUid),
+            amountCents: cents,
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            createdBy: currentUser.uid,
+            deleted: false
+        }).then(function () {
+            closeSettleModal();
+            showToast('Liquidação registada ✓');
+        }).catch(function (err) { showToast('Erro: ' + err.message); });
     }
 
     // === Group Info Modal ===
