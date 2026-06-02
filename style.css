@@ -92,6 +92,52 @@ body {
     margin-top: 16px;
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    margin: 16px 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+.auth-divider span {
+    padding: 0 12px;
+}
+
+.email-auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+.email-auth-form .input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.95rem;
+    background: var(--bg);
+    box-sizing: border-box;
+}
+.email-auth-form .input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.btn-full {
+    width: 100%;
+}
+.email-auth-form .btn-link {
+    margin-top: 4px;
+    font-size: 0.82rem;
+    text-align: center;
+}
+
 .inapp-warning {
     background: #fef9c3;
     border: 1px solid #ca8a04;

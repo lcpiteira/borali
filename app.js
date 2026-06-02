@@ -269,6 +269,12 @@
 
     function bindEvents() {
         googleLoginBtn.addEventListener('click', triggerGoogleLogin);
+        document.getElementById('emailLoginBtn').addEventListener('click', handleEmailLogin);
+        document.getElementById('emailRegisterBtn').addEventListener('click', handleEmailRegister);
+        document.getElementById('forgotPasswordBtn').addEventListener('click', handleForgotPassword);
+        document.getElementById('authPassword').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') handleEmailLogin();
+        });
         var openInSafariBtn = document.getElementById('openInSafariBtn');
         if (openInSafariBtn) {
             openInSafariBtn.addEventListener('click', function () {
@@ -470,6 +476,83 @@
         return /FBAN|FBAV|Instagram|WhatsApp|MicroMessenger|Line\/|Twitter\/|Snapchat/i.test(ua);
     }
 
+    function handleEmailLogin() {
+        var email = document.getElementById('authEmail').value.trim();
+        var password = document.getElementById('authPassword').value;
+        if (!email || !password) {
+            showToast('Preenche o email e a password');
+            return;
+        }
+        showScreen('loading');
+        auth.signInWithEmailAndPassword(email, password).catch(function (err) {
+            showScreen('login');
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+                showToast('Conta não encontrada. Cria uma conta primeiro.');
+            } else if (err.code === 'auth/wrong-password') {
+                showToast('Password incorrecta');
+            } else if (err.code === 'auth/invalid-email') {
+                showToast('Email inválido');
+            } else if (err.code === 'auth/too-many-requests') {
+                showToast('Demasiadas tentativas. Tenta mais tarde.');
+            } else {
+                showToast('Erro: ' + err.message);
+            }
+        });
+    }
+
+    function handleEmailRegister() {
+        var name = document.getElementById('authName').value.trim();
+        var email = document.getElementById('authEmail').value.trim();
+        var password = document.getElementById('authPassword').value;
+        if (!email || !password) {
+            showToast('Preenche o email e a password');
+            return;
+        }
+        if (password.length < 6) {
+            showToast('A password tem de ter pelo menos 6 caracteres');
+            return;
+        }
+        if (!name) {
+            showToast('Preenche o nome para criar conta');
+            return;
+        }
+        showScreen('loading');
+        auth.createUserWithEmailAndPassword(email, password).then(function (result) {
+            return result.user.updateProfile({ displayName: name });
+        }).then(function () {
+            // Profile updated, onAuthStateChanged will handle the rest
+        }).catch(function (err) {
+            showScreen('login');
+            if (err.code === 'auth/email-already-in-use') {
+                showToast('Este email já tem conta. Usa "Entrar".');
+            } else if (err.code === 'auth/weak-password') {
+                showToast('Password demasiado fraca (mín. 6 caracteres)');
+            } else if (err.code === 'auth/invalid-email') {
+                showToast('Email inválido');
+            } else {
+                showToast('Erro: ' + err.message);
+            }
+        });
+    }
+
+    function handleForgotPassword() {
+        var email = document.getElementById('authEmail').value.trim();
+        if (!email) {
+            showToast('Escreve o teu email primeiro');
+            return;
+        }
+        auth.sendPasswordResetEmail(email).then(function () {
+            showToast('Email de recuperação enviado! Verifica a caixa de entrada.');
+        }).catch(function (err) {
+            if (err.code === 'auth/user-not-found') {
+                showToast('Nenhuma conta com este email');
+            } else if (err.code === 'auth/invalid-email') {
+                showToast('Email inválido');
+            } else {
+                showToast('Erro: ' + err.message);
+            }
+        });
+    }
 
     function handleLogout() {
         detachListeners();
