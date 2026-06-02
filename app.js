@@ -422,6 +422,11 @@
         return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     }
 
+    function isSafari() {
+        var ua = navigator.userAgent || '';
+        return /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|Edg/i.test(ua);
+    }
+
     function handleGoogleLogin() {
         if (isInAppBrowser()) {
             document.getElementById('inappWarning').style.display = '';
@@ -429,16 +434,21 @@
             return;
         }
         var provider = new firebase.auth.GoogleAuthProvider();
-        if (isMobile()) {
-            // Redirect is more reliable than popup on mobile browsers
+        // Safari/iOS: signInWithRedirect is broken due to ITP storage partitioning.
+        // Use popup on Safari and desktop. Use redirect only on Android Chrome.
+        if (isMobile() && !isSafari()) {
             showScreen('loading');
             auth.signInWithRedirect(provider);
             return;
         }
         auth.signInWithPopup(provider).catch(function (err) {
             if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-                showScreen('loading');
-                auth.signInWithRedirect(provider);
+                if (isSafari()) {
+                    showToast('Permite popups para este site nas definições do Safari');
+                } else {
+                    showScreen('loading');
+                    auth.signInWithRedirect(provider);
+                }
             } else if (err.code === 'auth/web-storage-unsupported' || err.code === 'auth/operation-not-supported-in-this-environment') {
                 document.getElementById('inappWarning').style.display = '';
                 document.getElementById('googleLogin').style.display = 'none';
