@@ -190,20 +190,17 @@
 
         auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
-        auth.getRedirectResult().then(function (result) {
-            if (result.user) {
-                console.log('Redirect login:', result.user.email);
-            }
-        }).catch(function (err) {
-            console.error('Redirect error:', err);
-            if (err.code === 'auth/web-storage-unsupported' ||
-                err.code === 'auth/operation-not-supported-in-this-environment') {
-                document.getElementById('inappWarning').style.display = '';
-                document.getElementById('googleLogin').style.display = 'none';
-            } else {
-                showToast('Erro ao entrar: ' + err.message);
-            }
-        });
+        // Only process redirect result if we intentionally started one
+        if (sessionStorage.getItem('firebaseRedirectPending')) {
+            sessionStorage.removeItem('firebaseRedirectPending');
+            auth.getRedirectResult().then(function (result) {
+                if (result.user) {
+                    console.log('Redirect login:', result.user.email);
+                }
+            }).catch(function (err) {
+                console.error('Redirect error:', err);
+            });
+        }
 
         auth.onAuthStateChanged(function (user) {
             if (user) {
@@ -418,15 +415,6 @@
         return /FBAN|FBAV|Instagram|WhatsApp|MicroMessenger|Line\/|Twitter\/|Snapchat/i.test(ua);
     }
 
-    function isMobile() {
-        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    }
-
-    function isSafari() {
-        var ua = navigator.userAgent || '';
-        return /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|Edg/i.test(ua);
-    }
-
     function handleGoogleLogin() {
         if (isInAppBrowser()) {
             document.getElementById('inappWarning').style.display = '';
@@ -434,26 +422,23 @@
             return;
         }
         var provider = new firebase.auth.GoogleAuthProvider();
-        // Safari/iOS: signInWithRedirect is broken due to ITP storage partitioning.
-        // Use popup on Safari and desktop. Use redirect only on Android Chrome.
-        if (isMobile() && !isSafari()) {
-            showScreen('loading');
-            auth.signInWithRedirect(provider);
-            return;
-        }
-        auth.signInWithPopup(provider).catch(function (err) {
-            if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-                if (isSafari()) {
-                    showToast('Permite popups para este site nas definições do Safari');
-                } else {
-                    showScreen('loading');
-                    auth.signInWithRedirect(provider);
-                }
-            } else if (err.code === 'auth/web-storage-unsupported' || err.code === 'auth/operation-not-supported-in-this-environment') {
+        auth.signInWithPopup(provider).then(function (result) {
+            // Success - onAuthStateChanged will handle the rest
+        }).catch(function (err) {
+            console.error('Popup login error:', err.code, err.message);
+            if (err.code === 'auth/popup-blocked' ||
+                err.code === 'auth/popup-closed-by-user' ||
+                err.code === 'auth/cancelled-popup-request') {
+                // Fallback to redirect (works on Android Chrome, may fail on Safari)
+                try { sessionStorage.setItem('firebaseRedirectPending', '1'); } catch (e) {}
+                showScreen('loading');
+                auth.signInWithRedirect(provider);
+            } else if (err.code === 'auth/web-storage-unsupported' ||
+                       err.code === 'auth/operation-not-supported-in-this-environment') {
                 document.getElementById('inappWarning').style.display = '';
                 document.getElementById('googleLogin').style.display = 'none';
             } else {
-                showToast('Erro: ' + err.message);
+                showToast('Erro ao entrar: ' + err.message);
             }
         });
     }
