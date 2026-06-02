@@ -188,11 +188,6 @@
         db = firebase.database();
         auth = firebase.auth();
 
-        // Load Gemini API key
-        db.ref('config/geminiApiKey').once('value', function (snap) {
-            geminiApiKey = snap.val() || null;
-        });
-
         auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
         auth.getRedirectResult().then(function (result) {
@@ -206,6 +201,10 @@
         auth.onAuthStateChanged(function (user) {
             if (user) {
                 currentUser = user;
+                // Load Gemini API key now that user is authenticated
+                db.ref('config/geminiApiKey').once('value', function (snap) {
+                    geminiApiKey = snap.val() || null;
+                });
                 saveUserProfile(user);
                 showGroups();
             } else {
