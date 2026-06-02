@@ -1028,7 +1028,8 @@ body {
 
 /* Expense modal payer/participants */
 .expense-payer-list,
-.expense-participants-list {
+.expense-participants-list,
+.transfer-candidates {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;

@@ -172,6 +172,25 @@
             </div>
         </div>
 
+        <!-- Transfer Admin Modal -->
+        <div class="modal-overlay" id="transferAdminModal" style="display: none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>Transferir administração</h2>
+                    <button class="btn-close" id="closeTransferAdminModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="info-section">
+                        <p class="info-note">Escolhe quem fica como administrador antes de saíres.</p>
+                        <div class="transfer-candidates" id="transferCandidatesList"></div>
+                    </div>
+                    <div class="info-section">
+                        <button class="btn btn-primary" id="confirmTransferBtn">Transferir e sair</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Expense Modal (add/edit) -->
         <div class="modal-overlay" id="expenseModal" style="display: none;">
             <div class="modal">
@@ -318,6 +337,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <!-- Firebase SDK (compat - free tier) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
